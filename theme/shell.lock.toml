@@ -1,0 +1,12 @@
+[lock]
+background       = "#000000"
+background-alpha = 0.82
+text             = "#FFFFFF"
+placeholder      = "#8A8A8A"
+text-error       = "#FE1038"
+border           = "#FCEE0A"
+border-active    = "#00F0FF"
+border-error     = "#FE1038"
+border-alpha     = 1.0
+selection        = "#FCEE0A"
+selection-alpha  = 1.0

@@ -1,0 +1,42 @@
+mode = "dark"
+
+# Sampled from the live cyberpunk.net home stylesheet (home12, 2026-10-30):
+#   body #000, type #fff / #cbcbcb, brand yellow #fcee0a, header wash #fbff31,
+#   deeper yellow #f2e900, frame cyan #00f0ff, mute #4c4c4c,
+#   alert #fe1038, hot orange #ff6000.
+# Green, blue, and magenta are terminal splits of those hues so diffs stay readable.
+# The site face is commercial Blender Pro. This theme does not ship that file.
+
+accent = "#FCEE0A"
+selection = "#FCEE0A"
+selection_foreground = "#000000"
+muted = "#4C4C4C"
+
+background = "#000000"
+dark_background = "#000000"
+darker_background = "#000000"
+lighter_background = "#141414"
+
+foreground = "#FFFFFF"
+dark_foreground = "#8A8A8A"
+light_foreground = "#CBCBCB"
+bright_foreground = "#FFFFFF"
+
+hyprland_active_border = "rgba(fcee0aee)"
+hyprland_inactive_border = "rgba(4c4c4c99)"
+
+red = "#FE1038"
+yellow = "#FCEE0A"
+orange = "#FF6000"
+green = "#C8F531"
+cyan = "#00F0FF"
+blue = "#149FB8"
+magenta = "#FF4B6E"
+brown = "#6A5A20"
+
+bright_red = "#FF6B84"
+bright_yellow = "#FBFF31"
+bright_green = "#E4FF6A"
+bright_cyan = "#9AF6FF"
+bright_blue = "#5CDBF0"
+bright_magenta = "#FF8AA0"

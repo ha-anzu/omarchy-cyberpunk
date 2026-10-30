@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "nightcity.workspaces",
+  "name": "Districts",
+  "version": "1.0.0",
+  "author": "ha-anzu",
+  "description": "District callsigns for the ten desks",
+  "kinds": [
+    "bar-widget"
+  ],
+  "entryPoints": {
+    "barWidget": "Workspaces.qml"
+  },
+  "barWidget": {
+    "displayName": "Districts",
+    "description": "NET, ICE, BD, DOC, DECK, and the rest",
+    "category": "Compositor",
+    "allowMultiple": false
+  },
+  "omarchy": {
+    "clonedFrom": "omarchy.workspaces"
+  }
+}

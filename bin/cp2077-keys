@@ -1,0 +1,93 @@
+#!/bin/bash
+# Keyboard backlight glitch for the ASUS TUF single-zone light.
+# Brightness moves through logind. The color node is root-only, so this
+# cuts the light out and back instead of swapping yellow / cyan / red.
+# Stays quiet while the screen glitch is toggled off.
+set -u
+
+dev="asus::kbd_backlight"
+flag="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cp2077-glitch-off"
+lock="${XDG_RUNTIME_DIR:-/tmp}/cp2077-keys.lock"
+
+exec 9>"$lock"
+flock -n 9 || exit 0
+
+if ! brightnessctl -d "$dev" get >/dev/null 2>&1; then
+  exit 0
+fi
+
+base="$(brightnessctl -d "$dev" get)"
+paused=0
+
+set_level() {
+  brightnessctl -d "$dev" set "$1" >/dev/null 2>&1 || true
+}
+
+restore() {
+  [[ -n ${base:-} && $base != 0 ]] && set_level "$base"
+}
+trap restore EXIT INT TERM
+
+# Quiet time between hits, in tenths of a second. Short, and not a beat.
+next_gap() {
+  local span=$(( 18 + RANDOM % 38 ))
+  if (( RANDOM % 5 == 0 )); then
+    span=$(( span / 2 ))
+  fi
+  printf '%s\n' "$span"
+}
+
+burst() {
+  local step hold
+  local steps=$(( 4 + RANDOM % 3 ))
+  local i=0
+  while (( i < steps )); do
+    [[ -f $flag ]] && return 0
+    if (( i % 2 == 0 )); then
+      step=0
+    else
+      step=3
+    fi
+    set_level "$step"
+    hold="0.0$(( 4 + RANDOM % 5 ))"
+    sleep "$hold"
+    i=$(( i + 1 ))
+  done
+  set_level "$base"
+}
+
+while true; do
+  if [[ -f $flag ]]; then
+    if (( paused == 0 )); then
+      restore
+      paused=1
+    fi
+    sleep 0.4
+    continue
+  fi
+  paused=0
+
+  now="$(brightnessctl -d "$dev" get 2>/dev/null || echo "$base")"
+  if [[ $now == 0 ]]; then
+    sleep 0.4
+    continue
+  fi
+  base="$now"
+
+  gap="$(next_gap)"
+  waited=0
+  while (( waited < gap )); do
+    sleep 0.2
+    waited=$(( waited + 2 ))
+    [[ -f $flag ]] && continue 2
+    now="$(brightnessctl -d "$dev" get 2>/dev/null || echo "$base")"
+    if [[ $now == 0 ]]; then
+      sleep 0.4
+      continue 2
+    fi
+    base="$now"
+  done
+
+  burst
+  sleep 0.15
+done

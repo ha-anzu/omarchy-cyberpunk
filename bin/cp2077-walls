@@ -1,0 +1,96 @@
+#!/bin/bash
+# One wallpaper per workspace. NET, ICE, BD, DOC, DECK, then the set repeats.
+set -u
+
+base="${HOME}/.config/omarchy/themes/cyberpunk-2077/backgrounds"
+link="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/background"
+runtime="${XDG_RUNTIME_DIR:-/tmp}"
+lock="$runtime/cp2077-walls.lock"
+fifo="$runtime/cp2077-walls.fifo"
+
+exec 9>"$lock"
+flock -n 9 || exit 0
+
+shell_bin="$(command -v omarchy-shell || true)"
+if [[ -z $shell_bin && -x /usr/share/omarchy/bin/omarchy-shell ]]; then
+  shell_bin=/usr/share/omarchy/bin/omarchy-shell
+fi
+
+wall_for() {
+  case "$1" in
+    1 | 6) printf '%s\n' "$base/17-net.jpg" ;;
+    2 | 7) printf '%s\n' "$base/18-ice.jpg" ;;
+    3 | 8) printf '%s\n' "$base/19-bd.jpg" ;;
+    4 | 9) printf '%s\n' "$base/20-doc.jpg" ;;
+    5 | 10) printf '%s\n' "$base/21-deck.jpg" ;;
+    *) printf '%s\n' "$base/17-net.jpg" ;;
+  esac
+}
+
+apply() {
+  local id="$1" img current
+  [[ $id =~ ^[0-9]+$ ]] || return 0
+  img="$(wall_for "$id")"
+  [[ -f $img ]] || return 0
+  current="$(readlink -f "$link" 2>/dev/null || true)"
+  [[ $current == "$img" ]] && return 0
+  ln -nsf "$img" "$link"
+  if [[ -n $shell_bin ]]; then
+    "$shell_bin" -q background setInstant "$img" >/dev/null 2>&1 || true
+  fi
+  printf 'wall %s %s\n' "$id" "$(basename "$img")" >&2
+}
+
+current_id() {
+  hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import json,sys
+try:
+    print(json.load(sys.stdin).get("id", 1))
+except Exception:
+    print(1)'
+}
+
+apply "$(current_id)"
+
+sig="${HYPRLAND_INSTANCE_SIGNATURE:-}"
+if [[ -z $sig ]]; then
+  sig="$(basename "$(find "${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/hypr" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | head -1)")"
+fi
+sock="${XDG_RUNTIME_DIR}/hypr/${sig}/.socket2.sock"
+[[ -S $sock ]] || exit 0
+
+rm -f "$fifo"
+mkfifo "$fifo"
+
+# The lock fd stays in this process only. A leftover listener must not keep it.
+python3 - "$sock" 9>&- >"$fifo" << 'PY' &
+import socket, sys
+sock_path, = sys.argv[1:]
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+s.connect(sock_path)
+buf = b""
+while True:
+    chunk = s.recv(4096)
+    if not chunk:
+        break
+    buf += chunk
+    while b"\n" in buf:
+        line, buf = buf.split(b"\n", 1)
+        text = line.decode("utf-8", "replace")
+        wid = None
+        if text.startswith("workspace>>"):
+            wid = text.split(">>", 1)[1].strip()
+        elif text.startswith("workspacev2>>"):
+            wid = text.split(">>", 1)[1].split(",", 1)[0].strip()
+        if wid and wid.lstrip("-").isdigit() and int(wid) > 0:
+            print(wid, flush=True)
+PY
+listener=$!
+cleanup() {
+  kill "$listener" 2>/dev/null || true
+  rm -f "$fifo"
+}
+trap cleanup EXIT INT TERM
+
+while IFS= read -r id; do
+  apply "$id"
+done < "$fifo"
