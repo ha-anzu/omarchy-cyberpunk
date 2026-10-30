@@ -1,18 +1,14 @@
-```
- ╔════════════════════════════════════════════════════╗
- ║                                                    ║
- ║   ▌ NIGHT CITY                                     ║
- ║     an Omarchy theme for the whole desktop         ║
- ║                                                    ║
- ║     black field                                    ║
- ║     acid yellow frames      #FCEE0A                ║
- ║     cyan cuts               #00F0FF                ║
- ║                                                    ║
- ║     the screen glitches, then goes clean           ║
- ║     every workspace gets its own wallpaper         ║
- ║                                                    ║
- ╚════════════════════════════════════════════════════╝
-```
+<p align="center">
+  <img src="art/hero.png" width="100%" alt="Night City. An Omarchy theme for the whole desktop. The screen glitches, then goes clean. Every workspace gets its own wallpaper.">
+</p>
+
+<p align="center">
+  🌃 <b>your whole desktop</b>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  ⚡ <b>glitch, then clean</b>
+  &nbsp;&nbsp;·&nbsp;&nbsp;
+  🖼️ <b>a wall on every workspace</b>
+</p>
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ha-anzu/omarchy-cyberpunk/main/install.sh | bash
