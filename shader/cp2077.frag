@@ -1,5 +1,5 @@
 #version 300 es
-// Johnny merge. Clean between hits. Gaps are short and uneven.
+// Johnny merge. Clean between hits. Gaps are uneven, a few seconds long.
 // Each hit picks its own length and strength: a faint snap, a hard tear,
 // or a longer stutter. Idle split stays a fraction of a pixel.
 // Needs debug:damage_tracking = 0 so the time uniform advances.
@@ -69,8 +69,8 @@ vec3 consider(float t, float window, float chance, float salt) {
 void main() {
     vec2 uv = v_texcoord;
 
-    vec3 hitA = consider(time, 3.8, 1.0, 1.7);
-    vec3 hitB = consider(time, 5.6, 0.50, 8.9);
+    vec3 hitA = consider(time, 7.0, 1.0, 1.7);
+    vec3 hitB = consider(time, 11.0, 0.30, 8.9);
     vec3 hit = hitA.x >= hitB.x ? hitA : hitB;
     float env = hit.x;
     float seed = hit.y;

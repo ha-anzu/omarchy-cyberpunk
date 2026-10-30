@@ -30,7 +30,7 @@ trap restore EXIT INT TERM
 
 # Quiet time between hits, in tenths of a second. Short, and not a beat.
 next_gap() {
-  local span=$(( 18 + RANDOM % 38 ))
+  local span=$(( 40 + RANDOM % 50 ))
   if (( RANDOM % 5 == 0 )); then
     span=$(( span / 2 ))
   fi

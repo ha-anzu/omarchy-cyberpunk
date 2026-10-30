@@ -6,7 +6,7 @@ The screen glitch stays as it is. Do not edit `shader/cp2077.frag`.
 
 ## Always
 
-- Quiet for about 2–6 seconds, sometimes half that. Then a burst of 4–6 steps, 40–80 ms each. Not a metronome.
+- Quiet for about 4–9 seconds, sometimes half that. Then a burst of 4–6 steps, 40–80 ms each. Not a metronome.
 - Colors, when the hardware has them: yellow `FCEE0A`, cyan `00F0FF`, red `FE1038`. Then put the user's color back.
 - Brightness only: off, full, off, full, then the level they had. Read `max_brightness`. Do not assume 3.
 - Flag file `~/.local/state/omarchy/cp2077-glitch-off` means lights stay still. `Super+Shift+Alt+G` owns that flag.
