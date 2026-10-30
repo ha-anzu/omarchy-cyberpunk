@@ -1,8 +1,18 @@
-# JACKED IN
-
-Omarchy, after dark.
-
-Black. Acid yellow `#FCEE0A`. Cyan `#00F0FF`. A glitch that does not keep time.
+```
+ ╔════════════════════════════════════════════════════╗
+ ║                                                    ║
+ ║   ▌ NIGHT CITY                                     ║
+ ║     an Omarchy theme for the whole desktop         ║
+ ║                                                    ║
+ ║     black field                                    ║
+ ║     acid yellow frames      #FCEE0A                ║
+ ║     cyan cuts               #00F0FF                ║
+ ║                                                    ║
+ ║     the screen glitches, then goes clean           ║
+ ║     every workspace gets its own wallpaper         ║
+ ║                                                    ║
+ ╚════════════════════════════════════════════════════╝
+```
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/ha-anzu/omarchy-cyberpunk/main/install.sh | bash
