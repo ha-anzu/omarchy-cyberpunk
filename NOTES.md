@@ -15,3 +15,5 @@ Short version for the next person, or the next agent.
 **60 Hz** is a choice. See `extras/monitors-60hz.lua`. Do not force `eDP-2` on every machine.
 
 **Bar widget** id is `nightcity.workspaces`. The QML `moduleName` stays `omarchy.workspaces`.
+
+**Menu names stay stock.** A label-only override of `apps` clears `provider`, and the Apps list opens empty.

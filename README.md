@@ -30,7 +30,6 @@ Do not use `omarchy theme install` on this repo. It strips the lua.
 | Walls | one picture per desk |
 | Glitch | `Super+Shift+Alt+G` |
 | Bar | district callsigns, clock says NC |
-| Menus | slang. The old names still search |
 
 ## Two things to know
 

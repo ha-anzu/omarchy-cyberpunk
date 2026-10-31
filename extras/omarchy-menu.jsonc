@@ -27,34 +27,7 @@
   // Example: replace the default About action by reusing the same id. Existing
   // fields are kept unless overridden.
   // "about": {"icon":"","label":"About","action":"omarchy-launch-or-focus-tui \"zsh -c 'fastfetch; read -k 1'\""},
-
-  "apps": {"label":"Shards","description":"Apps"},
-  "learn": {"label":"School","description":"Learn"},
-  "trigger": {"label":"Delta","description":"Trigger"},
-  "style": {"label":"Chrome","description":"Style"},
-  "setup": {"label":"Ripperdoc","description":"Setup"},
-  "install": {"label":"Slot","description":"Install"},
-  "remove": {"label":"Zero","description":"Remove"},
-  "update": {"label":"Sync","description":"Update"},
-  "about": {"label":"Whoami","description":"About"},
-  "system": {"label":"Flatline","description":"System"},
-
-  "system.screensaver": {"label":"Idle Loop","description":"Screensaver"},
-  "system.lock": {"label":"Ice","description":"Lock"},
-  "system.suspend": {"label":"Sleep Mode","description":"Suspend"},
-  "system.hibernate": {"label":"Cold Storage","description":"Hibernate"},
-  "system.logout": {"label":"Jack Out","description":"Logout"},
-  "system.reboot": {"label":"Reboot Deck","description":"Reboot"},
-  "system.shutdown": {"label":"Flatline","description":"Shutdown"},
-
-  "trigger.capture": {"label":"Optic","description":"Capture"},
-  "trigger.capture.screenshot": {"label":"Still","description":"Screenshot"},
-  "trigger.capture.screenrecord": {"label":"Reel","description":"Screenrecord"},
-  "trigger.share": {"label":"Drop","description":"Share"},
-  "trigger.toggle": {"label":"Switch","description":"Toggle"},
-  "style.theme": {"label":"Look","description":"Theme"},
-  "style.background": {"label":"Wall","description":"Background"},
-  "style.font": {"label":"Type","description":"Font"},
-  "setup.network": {"label":"Net","description":"Network"},
-  "setup.security": {"label":"ICE","description":"Security"},
+  //
+  // Do not override "apps" with a label alone. The loader writes every omitted
+  // field as empty, including provider, and the Apps list then opens blank.
 }
