@@ -1,5 +1,7 @@
 #!/bin/bash
-# Toggle the Cyberpunk screen glitch. Off restores normal damage tracking.
+# Toggle the Cyberpunk screen glitch.
+# On keeps a steady frame clock so a hit cannot freeze on a still screen.
+# Off restores normal damage tracking and variable frame rate.
 
 flag="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cp2077-glitch-off"
 shader="$HOME/.config/hypr/shaders/cp2077.frag"
@@ -7,10 +9,10 @@ mkdir -p "$(dirname "$flag")"
 
 if [[ -f $flag ]]; then
   rm -f "$flag"
-  hyprctl eval "hl.config({ debug = { damage_tracking = 0 }, decoration = { screen_shader = '$shader' } })" >/dev/null
+  hyprctl eval "hl.config({ debug = { damage_tracking = 0, vfr = false }, decoration = { screen_shader = '$shader' } })" >/dev/null
   hyprctl notify 5 1600 "rgb(fcee0a)" "Glitch on"
 else
   touch "$flag"
-  hyprctl eval 'hl.config({ decoration = { screen_shader = "" }, debug = { damage_tracking = 2 } })' >/dev/null
+  hyprctl eval 'hl.config({ decoration = { screen_shader = "" }, debug = { damage_tracking = 2, vfr = true } })' >/dev/null
   hyprctl notify 1 1600 "rgb(fcee0a)" "Glitch off"
 fi

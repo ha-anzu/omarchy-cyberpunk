@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "nightcity.frame",
+  "name": "Night City Frames",
+  "version": "1.0.0",
+  "author": "ha-anzu",
+  "description": "Thin broken chamfer frames drawn around windows.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "nightcity.lock",
+  "name": "Night City Lock",
+  "version": "1.0.0",
+  "author": "ha-anzu",
+  "description": "Omarchy lock screen with the same broken yellow frame as the windows.",
+  "omarchy": {
+    "capabilities": [
+      "authentication"
+    ],
+    "clonedFrom": "omarchy.lock"
+  },
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}

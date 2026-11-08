@@ -88,20 +88,53 @@ print(nums[2], nums[3], nums[4])'
     printf '%s\n' "$span"
   }
 
+  # One backlight zone. A "line" is the whole keyboard stepping through a
+  # sweep. Separate keys cannot hold different colors on this model.
+  c_step() {
+    [[ -f $flag ]] && return 1
+    c_light_off && return 1
+    # shellcheck disable=SC2086
+    c_set_color $1 || return 1
+    sleep "0.0$((4 + RANDOM % 5))"
+  }
+
   c_burst() {
-    local steps=$((4 + RANDOM % 3))
-    local i=0 hold pick
-    local -a palette=("252 238 10" "0 240 255" "254 16 56")
-    while ((i < steps)); do
-      [[ -f $flag ]] && return 0
-      c_light_off && return 0
-      pick="${palette[$((RANDOM % 3))]}"
-      # shellcheck disable=SC2086
-      c_set_color $pick || return 0
-      hold="0.0$((4 + RANDOM % 5))"
-      sleep "$hold"
-      i=$((i + 1))
-    done
+    local -a palette=("252 238 10" "0 240 255" "254 16 56" "57 255 20")
+    local -a sweep=("252 238 10" "57 255 20" "0 240 255" "254 16 56" "57 255 20" "0 240 255")
+    local kind=$((RANDOM % 10))
+    local i=0 steps pick idx start
+    if ((kind < 3)); then
+      pick="${palette[$((RANDOM % 4))]}"
+      steps=$((3 + RANDOM % 3))
+      while ((i < steps)); do
+        c_step "$pick" || break
+        i=$((i + 1))
+      done
+    elif ((kind < 6)); then
+      start=$((RANDOM % 6))
+      steps=$((5 + RANDOM % 4))
+      local dir=1
+      ((RANDOM % 2 == 0)) && dir=-1
+      while ((i < steps)); do
+        if ((dir < 0)); then
+          idx=$(((start + 60 - i) % 6))
+        else
+          idx=$(((start + i) % 6))
+        fi
+        c_step "${sweep[$idx]}" || break
+        i=$((i + 1))
+      done
+    else
+      pick="${palette[$((RANDOM % 4))]}"
+      steps=$((4 + RANDOM % 5))
+      while ((i < steps)); do
+        if ((RANDOM % 3 != 0)); then
+          pick="${palette[$((RANDOM % 4))]}"
+        fi
+        c_step "$pick" || break
+        i=$((i + 1))
+      done
+    fi
     c_set_color "$base_r" "$base_g" "$base_b" || true
   }
 

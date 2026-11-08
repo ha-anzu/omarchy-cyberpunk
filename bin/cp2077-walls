@@ -1,8 +1,12 @@
 #!/bin/bash
-# One wallpaper per workspace. NET, ICE, BD, DOC, DECK, then the set repeats.
+# One wallpaper per workspace.
+# The pictures shipped with the theme are NET, ICE, BD, DOC, DECK.
+# If the optional official pack is on disk, and the file for this desk exists,
+# that file is used instead. Those images are not part of this repo.
 set -u
 
-base="${HOME}/.config/omarchy/themes/cyberpunk-2077/backgrounds"
+theme="${HOME}/.config/omarchy/themes/cyberpunk-2077/backgrounds"
+official="${HOME}/.local/share/omarchy/cyberpunk-wallpapers"
 link="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/current/background"
 runtime="${XDG_RUNTIME_DIR:-/tmp}"
 lock="$runtime/cp2077-walls.lock"
@@ -16,15 +20,50 @@ if [[ -z $shell_bin && -x /usr/share/omarchy/bin/omarchy-shell ]]; then
   shell_bin=/usr/share/omarchy/bin/omarchy-shell
 fi
 
-wall_for() {
+# Free desktop packs, in desk order. Missing files fall back to the theme.
+official_names=(
+  cover-art.jpg
+  love-or-burn.jpg
+  night-city.png
+  male-v.jpg
+  female-v.png
+  corporate-plaza.png
+  downtown.png
+  kabuki.png
+  japantown.png
+  dogtown.png
+  heywood.png
+  santo-domingo.png
+  pacifica.png
+  badlands.png
+  north-oak.png
+  northside.png
+  arasaka-waterfront.png
+)
+
+theme_for() {
   case "$1" in
-    1 | 6) printf '%s\n' "$base/17-net.jpg" ;;
-    2 | 7) printf '%s\n' "$base/18-ice.jpg" ;;
-    3 | 8) printf '%s\n' "$base/19-bd.jpg" ;;
-    4 | 9) printf '%s\n' "$base/20-doc.jpg" ;;
-    5 | 10) printf '%s\n' "$base/21-deck.jpg" ;;
-    *) printf '%s\n' "$base/17-net.jpg" ;;
+    1 | 6) printf '%s\n' "$theme/17-net.jpg" ;;
+    2 | 7) printf '%s\n' "$theme/18-ice.jpg" ;;
+    3 | 8) printf '%s\n' "$theme/19-bd.jpg" ;;
+    4 | 9) printf '%s\n' "$theme/20-doc.jpg" ;;
+    5 | 10) printf '%s\n' "$theme/21-deck.jpg" ;;
+    *) printf '%s\n' "$theme/17-net.jpg" ;;
   esac
+}
+
+wall_for() {
+  local id="$1" n i img
+  if [[ -d $official ]]; then
+    n=${#official_names[@]}
+    i=$(((id - 1) % n))
+    img="$official/${official_names[$i]}"
+    if [[ -f $img ]]; then
+      printf '%s\n' "$img"
+      return 0
+    fi
+  fi
+  theme_for "$id"
 }
 
 apply() {

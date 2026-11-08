@@ -1,2 +1,4 @@
 icon-theme.cache
 *.cache
+__pycache__/
+*.pyc

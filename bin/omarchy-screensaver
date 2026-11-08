@@ -1,0 +1,413 @@
+#!/usr/bin/env python3
+# Arasaka flatline. Omarchy launches this full screen when the machine sits idle.
+# The picture stays dead: blood-red, torn, and glowing. It does not recover.
+# Any key, or leaving the screensaver window, drops back to the desktop.
+
+import json
+import os
+import random
+import select
+import shutil
+import signal
+import subprocess
+import sys
+import termios
+import time
+import tty
+
+YELLOW = "\033[38;2;252;238;10m"
+CYAN = "\033[38;2;0;240;255m"
+BLOOD = "\033[38;2;186;8;18m"
+DEEP = "\033[38;2;92;4;10m"
+HOT = "\033[38;2;255;36;48m"
+GLOW = "\033[38;2;255;150;150m"
+WHITE = "\033[38;2;255;228;228m"
+ASH = "\033[38;2;92;48;52m"
+GOLD = "\033[38;2;252;238;10m"
+RESET = "\033[0m"
+
+# Six-wide, six-tall. Wide enough to read, narrow enough for FLATLINED.
+FONT = {
+    "A": [" ███  ", "██ ██ ", "██ ██ ", "█████ ", "██ ██ ", "██ ██ "],
+    "R": ["████  ", "██ ██ ", "██ ██ ", "████  ", "██ ██ ", "██ ██ "],
+    "S": [" ████ ", "██    ", "███   ", "  ███ ", "   ██ ", "████  "],
+    "K": ["██ ██ ", "██ ██ ", "████  ", "███   ", "██ ██ ", "██ ██ "],
+    "F": ["█████ ", "██    ", "██    ", "████  ", "██    ", "██    "],
+    "L": ["██    ", "██    ", "██    ", "██    ", "██    ", "█████ "],
+    "T": ["█████ ", "  ██  ", "  ██  ", "  ██  ", "  ██  ", "  ██  "],
+    "I": ["█████ ", "  ██  ", "  ██  ", "  ██  ", "  ██  ", "█████ "],
+    "N": ["██ ██ ", "███ ██", "█████ ", "██ ███", "██ ██ ", "██ ██ "],
+    "E": ["█████ ", "██    ", "██    ", "████  ", "██    ", "█████ "],
+    "D": ["████  ", "██ ██ ", "██ ██ ", "██ ██ ", "██ ██ ", "████  "],
+    " ": ["      ", "      ", "      ", "      ", "      ", "      "],
+}
+GLYPH_H = 6
+
+
+def size():
+    cols, rows = shutil.get_terminal_size((100, 36))
+    return max(cols, 40), max(rows, 16)
+
+
+def clip(text, cols):
+    if len(text) > cols:
+        return text[:cols]
+    return text + (" " * (cols - len(text)))
+
+
+def paint(text, color):
+    return color + text + RESET
+
+
+def big_word(word):
+    rows = [""] * GLYPH_H
+    for ch in word:
+        glyph = FONT.get(ch, FONT[" "])
+        for i in range(GLYPH_H):
+            rows[i] += glyph[i] + " "
+    return rows
+
+
+def glow_color(tick):
+    # A dying phosphor. Mostly blood, sometimes hot, rarely a white spike.
+    phase = tick % 26
+    if phase == 0:
+        return WHITE
+    if phase < 4 or 12 <= phase < 16:
+        return HOT
+    if phase < 8:
+        return GLOW
+    return BLOOD
+
+
+def broken_row(cols, y, tick, rng):
+    chars = []
+    tear = (y * 3 + tick // 2) % 19 == 0
+    for x in range(cols):
+        roll = rng.random()
+        column = (x * 17 + y * 3) % 53
+        if tear and 2 < x < cols - 2:
+            chars.append(" ")
+        elif column == 0 and roll < 0.7:
+            chars.append("│")
+        elif roll < 0.012:
+            chars.append("█")
+        elif roll < 0.03:
+            chars.append(rng.choice("▓▒░"))
+        elif roll < 0.055:
+            chars.append(rng.choice("·+"))
+        else:
+            chars.append(" ")
+    if (y + tick // 4) % 9 == 0:
+        shift = 1 + (y + tick) % 7
+        chars = chars[shift:] + [" "] * shift
+    # A missing chunk, so the field looks cracked rather than textured.
+    if rng.random() < 0.55:
+        hole = rng.randint(0, max(1, cols - 8))
+        width = rng.randint(3, 10)
+        for i in range(hole, min(cols, hole + width)):
+            chars[i] = " "
+    return chars
+
+
+def drips(cols, rows, tick):
+    marks = {}
+    for i in range(8):
+        x = (i * 29 + 7) % max(1, cols)
+        head = (tick + i * 11) % (rows + 10)
+        length = 5 + (i % 6)
+        for k in range(length):
+            y = head - k
+            if 0 <= y < rows:
+                marks[(x, y)] = k
+    return marks
+
+
+def apply_drip(chars, y, drip, tick):
+    for x, ch in enumerate(chars):
+        depth = drip.get((x, y))
+        if depth is None:
+            continue
+        if depth == 0 and tick % 5 == 0:
+            chars[x] = "●"
+        elif depth < 2:
+            chars[x] = "█"
+        else:
+            chars[x] = "▓" if ch == " " else ch
+    return chars
+
+
+def flatline(cols, tick):
+    line = ["─"] * cols
+    # One dying twitch, then the trace goes flat again.
+    beat = tick % 34
+    if beat < 7:
+        spike = "▁▂▄█▇▂▁"
+        start = (cols * 2) // 3
+        for i, glyph in enumerate(spike):
+            at = start + i
+            if at < cols:
+                line[at] = glyph
+    return "".join(line)
+
+
+def center_glyph(glyph, cols, shift):
+    text = glyph
+    if shift:
+        if shift > 0:
+            text = (" " * shift) + glyph
+        else:
+            text = glyph[-shift:]
+    return clip(text.center(cols), cols)
+
+
+def frame(tick):
+    cols, rows = size()
+    rng = random.Random(tick * 17 + 3)
+    color = glow_color(tick)
+    ghost = DEEP if color is not WHITE else BLOOD
+    lines = []
+
+    brand = " ARASAKA   //   COUNTER-INTEL   //   SUBJECT FLATLINED   //   EEG NULL "
+    lines.append(paint(clip(brand, cols), GOLD if tick % 26 == 0 else HOT))
+    rule = "─" * cols
+    # Break the rule so it is not one clean stroke.
+    cut = (tick * 5) % max(1, cols - 12)
+    rule = rule[:cut] + " " + rule[cut + 1 :]
+    lines.append(paint(clip(rule, cols), DEEP))
+
+    body_rows = max(0, rows - 8)
+    drip = drips(cols, rows, tick // 2)
+    field = []
+    for y in range(body_rows):
+        chars = broken_row(cols, y, tick, rng)
+        apply_drip(chars, y, drip, tick)
+        if tick % 11 == 0 and y % 6 == (tick // 2) % 6:
+            burst = rng.randint(0, max(1, cols // 3))
+            for i in range(burst, min(cols, burst + rng.randint(4, 14))):
+                chars[i] = rng.choice("▓▒░")
+        field.append("".join(chars))
+
+    title = big_word("ARASAKA")
+    dead = big_word("FLATLINED")
+    block = len(title) + 2 + len(dead)
+    top = max(1, (body_rows - block) // 2)
+
+    def tear(row):
+        # The word sits still, then one band rips sideways.
+        if tick % 7 != 0 and tick % 11 != 4:
+            return 0
+        if row % 3 != (tick // 2) % 3:
+            return 0
+        return ((tick // 3) % 7) - 3
+
+    for i, glyph in enumerate(title):
+        slot = top + i
+        if 0 <= slot < len(field):
+            field[slot] = center_glyph(glyph, cols, tear(i))
+    for i, glyph in enumerate(dead):
+        slot = top + len(title) + 2 + i
+        if 0 <= slot < len(field):
+            field[slot] = center_glyph(glyph, cols, tear(i + 4))
+
+    # A dim copy one row down sells the glow. It is the same dead word, bleeding.
+    for i, glyph in enumerate(dead):
+        slot = top + len(title) + 3 + i
+        if 0 <= slot < len(field) and tick % 26 != 0:
+            ghost_row = center_glyph(glyph, cols, 1)
+            # Only fill spaces, so the bright word stays on top where they overlap.
+            current = list(field[slot])
+            for x, ch in enumerate(ghost_row):
+                if ch != " " and current[x] == " ":
+                    current[x] = ch
+            field[slot] = "".join(current)
+
+    for y, raw in enumerate(field):
+        row_color = color if top <= y < top + block + 1 else DEEP
+        if tick % 26 == 0 and top <= y < top + len(title):
+            row_color = WHITE
+        if y % 13 == tick % 13 and row_color is DEEP:
+            row_color = ASH
+        lines.append(paint(clip(raw, cols), row_color))
+
+    while len(lines) < rows - 6:
+        lines.append(paint(" " * cols, DEEP))
+    lines = lines[: rows - 6]
+
+    trace_color = HOT if tick % 34 < 7 else BLOOD
+    lines.append(paint(clip(flatline(cols, tick), cols), trace_color))
+    lines.append(paint(clip(rule, cols), DEEP))
+
+    dead_log = [
+        "CARDIAC OUTPUT  00",
+        "BLOOD OX        00",
+        "NEURAL LATTICE  DARK",
+        "SOULKILLER      NO PATTERN",
+        "RELIC           OFFLINE",
+        "TIME OF DEATH   LOCKED",
+    ]
+    start = (tick // 7) % len(dead_log)
+    for i in range(4):
+        msg = "> " + dead_log[(start + i) % len(dead_log)]
+        if tick % 17 == i:
+            msg = "> " + "".join(rng.choice("█▓▒/\\") for _ in range(rng.randint(8, 18)))
+        ink = HOT if i == 3 else ASH
+        lines.append(paint(clip(msg, cols), ink))
+
+    while len(lines) < rows:
+        lines.append(paint(" " * cols, DEEP))
+    return "\033[H" + "\n".join(lines[:rows]) + frame_overlay(cols, rows, tick)
+
+
+def mix(seed, salt):
+    n = (seed ^ ((salt + 1) * 0x9E3779B1)) & 0xFFFFFFFF
+    n = (n * 0x85EBCA6B) & 0xFFFFFFFF
+    n = (n ^ (n >> 13)) & 0xFFFFFFFF
+    return (n % 10000) / 10000.0
+
+
+def frame_overlay(cols, rows, tick):
+    # Same rules as the window frames, in cells: uneven cuts, a gap in each
+    # run, and one half stepped inward. Yellow stroke, cyan tick.
+    seed = 4
+    step = (tick // 22) % 8
+    slide = int((step - 3.5) * 1.4)
+    cuts = [
+        min(6, 2 + int(mix(seed, 1) * 4)),
+        min(5, 1 + int(mix(seed, 2) * 3)),
+        min(6, 3 + int(mix(seed, 3) * 3)),
+        min(6, 2 + int(mix(seed, 4) * 4)),
+    ]
+    cells = {}
+
+    def put(x, y, ch, color=YELLOW):
+        if 0 <= x < cols and 0 <= y < rows:
+            cells[(int(x), int(y))] = (ch, color)
+
+    def run(x0, y0, x1, y1, salt, inward):
+        dx = x1 - x0
+        dy = y1 - y0
+        length = abs(dx) + abs(dy)
+        if length < 8:
+            return
+        gap = 4 + int(mix(seed, salt + 2) * 6)
+        center = int(length * (0.22 + mix(seed, salt + 3) * 0.52)) + slide
+        g0 = max(2, center - gap // 2)
+        g1 = min(length - 2, center + gap // 2)
+        sx = 0 if dx == 0 else (1 if dx > 0 else -1)
+        sy = 0 if dy == 0 else (1 if dy > 0 else -1)
+        nx, ny = inward
+        glyph = "─" if sy == 0 else "│"
+        for i in range(2, length - 2):
+            if g0 <= i <= g1:
+                continue
+            shift = 0 if i < center else 1
+            put(x0 + sx * i + nx * shift, y0 + sy * i + ny * shift, glyph)
+
+    def chamfer(x0, y0, x1, y1, salt, ch):
+        steps = max(abs(x1 - x0), abs(y1 - y0), 1)
+        broken = mix(seed, salt) > 0.62
+        for i in range(steps + 1):
+            if broken and steps * 0.42 < i < steps * 0.68:
+                continue
+            t = i / steps
+            put(round(x0 + (x1 - x0) * t), round(y0 + (y1 - y0) * t), ch)
+
+    x, y, w, h = 0, 0, cols - 1, rows - 1
+    run(x + cuts[0], y, x + w - cuts[1], y, 10, (0, 1))
+    run(x + w, y + cuts[1], x + w, y + h - cuts[2], 20, (-1, 0))
+    run(x + w - cuts[2], y + h, x + cuts[3], y + h, 30, (0, -1))
+    run(x, y + h - cuts[3], x, y + cuts[0], 40, (1, 0))
+    chamfer(x + cuts[0], y, x, y + cuts[0], 51, "\\")
+    chamfer(x + w - cuts[1], y, x + w, y + cuts[1], 52, "/")
+    chamfer(x + w, y + h - cuts[2], x + w - cuts[2], y + h, 53, "\\")
+    chamfer(x, y + h - cuts[3], x + cuts[3], y + h, 54, "/")
+    longest = max(range(4), key=lambda i: cuts[i])
+    if longest == 0:
+        put(x + 1, y + cuts[0] + 1, "│", CYAN)
+        put(x + 1, y + cuts[0] + 2, "│", CYAN)
+    elif longest == 1:
+        put(x + w - 1, y + cuts[1] + 1, "│", CYAN)
+        put(x + w - 1, y + cuts[1] + 2, "│", CYAN)
+    elif longest == 2:
+        put(x + w - cuts[2] - 2, y + h - 1, "─", CYAN)
+        put(x + w - cuts[2] - 1, y + h - 1, "─", CYAN)
+    else:
+        put(x + cuts[3] + 1, y + h - 1, "─", CYAN)
+        put(x + cuts[3] + 2, y + h - 1, "─", CYAN)
+    return "".join(
+        f"\033[{cy + 1};{cx + 1}H{color}{ch}{RESET}"
+        for (cx, cy), (ch, color) in cells.items()
+    )
+
+
+def hypr_cursor(hidden):
+    if not os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return
+    flag = "true" if hidden else "false"
+    subprocess.run(
+        ["hyprctl", "eval", f"hl.config({{ cursor = {{ invisible = {flag} }} }})"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+
+def screensaver_focused():
+    try:
+        out = subprocess.check_output(["hyprctl", "activewindow", "-j"], text=True, timeout=1)
+        return json.loads(out).get("class") == "org.omarchy.screensaver"
+    except (subprocess.SubprocessError, json.JSONDecodeError, OSError):
+        return True
+
+
+def main():
+    once = os.environ.get("CP2077_SAVER_FRAMES")
+    frames = int(once) if once else 0
+    hypr_cursor(True)
+    sys.stdout.write("\033]11;rgb:00/00/00\007\033[2J\033[?25l")
+    sys.stdout.flush()
+    fd = sys.stdin.fileno()
+    old = None
+    if sys.stdin.isatty() and frames == 0:
+        old = termios.tcgetattr(fd)
+        tty.setcbreak(fd)
+
+    def finish(*_args):
+        sys.stdout.write("\033[?25h" + RESET + "\033[2J\033[H")
+        sys.stdout.flush()
+        if old is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        hypr_cursor(False)
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGINT, finish)
+    signal.signal(signal.SIGTERM, finish)
+    signal.signal(signal.SIGHUP, finish)
+    started = time.monotonic()
+    tick = 0
+    try:
+        while True:
+            sys.stdout.write(frame(tick))
+            sys.stdout.flush()
+            tick += 1
+            if frames and tick >= frames:
+                break
+            if old is not None:
+                ready, _, _ = select.select([fd], [], [], 0.05)
+                if ready:
+                    break
+            else:
+                time.sleep(0.05)
+            if frames == 0 and time.monotonic() - started > 1.2 and tick % 12 == 0:
+                if not screensaver_focused():
+                    break
+    finally:
+        sys.stdout.write("\033[?25h" + RESET)
+        sys.stdout.flush()
+        if old is not None:
+            termios.tcsetattr(fd, termios.TCSADRAIN, old)
+        hypr_cursor(False)
+
+
+if __name__ == "__main__":
+    main()

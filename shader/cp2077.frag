@@ -2,7 +2,9 @@
 // Johnny merge. Clean between hits. Gaps are uneven, a few seconds long.
 // Each hit picks its own length and strength: a faint snap, a hard tear,
 // or a longer stutter. Idle split stays a fraction of a pixel.
-// Needs debug:damage_tracking = 0 so the time uniform advances.
+// Needs debug:damage_tracking = 0 and debug:vfr = false. Damage tracking
+// off redraws a scheduled frame. Variable frame rate still skips the next
+// one when the screen is still, which freezes a hit on the last picture.
 precision highp float;
 
 in vec2 v_texcoord;
@@ -69,8 +71,8 @@ vec3 consider(float t, float window, float chance, float salt) {
 void main() {
     vec2 uv = v_texcoord;
 
-    vec3 hitA = consider(time, 7.0, 1.0, 1.7);
-    vec3 hitB = consider(time, 11.0, 0.30, 8.9);
+    vec3 hitA = consider(time, 8.0, 1.0, 1.7);
+    vec3 hitB = consider(time, 12.5, 0.30, 8.9);
     vec3 hit = hitA.x >= hitB.x ? hitA : hitB;
     float env = hit.x;
     float seed = hit.y;

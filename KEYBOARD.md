@@ -6,8 +6,9 @@ The screen glitch stays as it is. Do not edit `shader/cp2077.frag`.
 
 ## Always
 
-- Quiet for about 4–9 seconds, sometimes half that. Then a burst of 4–6 steps, 40–80 ms each. Not a metronome.
-- Colors, when the hardware has them: yellow `FCEE0A`, cyan `00F0FF`, red `FE1038`. Then put the user's color back.
+- Quiet for about 4–9 seconds, sometimes half that. Then a burst. Steps are 40–80 ms. Not a metronome.
+- Colors, when the hardware has them: yellow `FCEE0A`, cyan `00F0FF`, red `FE1038`, neon green `57 255 20` (57, 255, 20). Then put the user's color back.
+- On the Flow Z13 the burst has three shapes. About 3 in 10 hold one color for 3–5 steps. About 3 in 10 sweep yellow, green, cyan, red, green, cyan for 5–8 steps, either direction. The rest jump the palette for 4–8 steps and sometimes repeat. Brightness-only boards stay on the off, full, off, full flicker.
 - Brightness only: off, full, off, full, then the level they had. Read `max_brightness`. Do not assume 3.
 - Flag file `~/.local/state/omarchy/cp2077-glitch-off` means lights stay still. `Super+Shift+Alt+G` owns that flag.
 - If they turn the backlight off, leave it off.
@@ -54,7 +55,7 @@ echo "0 0 252 238 10 1" > /sys/class/leds/asus::kbd_backlight/kbd_rgb_mode
 
 `cmd` must stay `0`. `1` writes the controller's flash. Test one write. Permission denied means use the brightness script. Do not add a udev rule unless they ask for color.
 
-Cyan is `0 0 0 240 255 1`. Red is `0 0 254 16 56 1`.
+Cyan is `0 0 0 240 255 1`. Red is `0 0 254 16 56 1`. Neon green is `0 0 57 255 20 1`.
 
 ## ASUS brightness
 
@@ -64,15 +65,17 @@ The repo script already does this and exits if the LED is missing.
 
 ## ROG Flow Z13 GZ301ZE
 
-The product name is `ROG Flow Z13 GZ301ZE`. That is the model. Do not read or write `product_serial`, `board_serial`, `product_uuid`, a hostname, or a home path.
+The product name is `ROG Flow Z13 GZ301ZE`. That is the model. Do not read or write `product_serial`, `board_serial`, `product_uuid`, a hostname, a home path, a MAC, or a machine id.
 
-There is no `kbd_rgb_mode` node, so the sysfs save bit is not available. Color goes through asusd. The keyboard is two N-KEY devices, USB `0b05:18c6` and `0b05:1a30`. Find their Aura objects. Do not copy an object path off one machine. The interface numbers at the end of the path are not part of the model.
+There is no `kbd_rgb_mode` node, so the sysfs save bit is not available. Color goes through asusd. The keyboard is two N-KEY devices, USB `0b05:18c6` and `0b05:1a30`. Find their Aura objects at runtime. Do not copy an object path off one machine. The interface numbers at the end of the path are not part of the model.
+
+One backlight zone. A line of color is the whole keyboard changing together. Separate keys cannot hold different colors. Neon green is `57 255 20`. The three burst shapes are in the Always section.
 
 ```bash
 busctl tree xyz.ljones.Asusd | grep -oE '/xyz/ljones/aura/[A-Za-z0-9_]+'
 ```
 
-Write `LedModeData` as static (`0`), one live color, speed `Med`, direction `Right`. Yellow is `252 238 10`, cyan `0 240 255`, red `254 16 56`. Then write the color that was already showing.
+Write `LedModeData` as static (`0`), one live color, speed `Med`, direction `Right`. Yellow is `252 238 10`, cyan `0 240 255`, red `254 16 56`, neon green `57 255 20`. Then write the color that was already showing.
 
 A color write reapplies the brightness saved in asusd. Before the first burst, set the Aura `Brightness` property from the current `asus::kbd_backlight` level, and do it again if that level changes. If the backlight is `0`, leave it off.
 

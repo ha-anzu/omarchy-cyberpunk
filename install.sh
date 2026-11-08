@@ -26,6 +26,43 @@ need() {
 need git
 need python3
 
+# Copies Omarchy's lock service, then lays our frame view on top.
+# Skips the copy when another lock plugin is already enabled, so a custom
+# lock is left alone. The auth service itself is not stored in this repo.
+install_nightcity_lock() {
+  local stock="/usr/share/omarchy/shell/plugins/lock"
+  local dst="$CFG/omarchy/plugins/nightcity.lock"
+  local choice=install
+  if [[ ! -f $stock/Service.qml ]]; then
+    echo "Lock clone skipped. Omarchy's lock plugin was not on this machine."
+    return 0
+  fi
+  if [[ -f $CFG/omarchy/shell.json ]]; then
+    choice=$(python3 - "$CFG/omarchy/shell.json" << 'PY'
+import json, sys
+data = json.loads(open(sys.argv[1], encoding="utf-8").read())
+ids = []
+for entry in data.get("plugins") or []:
+    if isinstance(entry, dict):
+        ids.append(str(entry.get("id") or ""))
+    elif isinstance(entry, str):
+        ids.append(entry)
+print("skip" if any(i.endswith(".lock") and i != "nightcity.lock" for i in ids) else "install")
+PY
+)
+  fi
+  if [[ $choice == skip ]]; then
+    echo "Lock clone skipped. Another lock plugin is already enabled."
+    return 0
+  fi
+  rm -rf "$dst"
+  cp -a "$stock" "$dst"
+  cp -a "$SRC/plugin/nightcity.lock/LockView.qml" "$dst/LockView.qml"
+  mkdir -p "$dst/i18n"
+  cp -a "$SRC/plugin/nightcity.lock/i18n/en.json" "$dst/i18n/en.json"
+  cp -a "$SRC/plugin/nightcity.lock/manifest.json" "$dst/manifest.json"
+}
+
 mkdir -p "$CFG/omarchy/themes" "$CFG/omarchy/bin" "$CFG/omarchy/plugins" \
   "$CFG/omarchy/extensions" "$CFG/omarchy/hooks/post-boot.d" \
   "$HYPR/shaders" "$HOME_DIR/.local/share/icons"
@@ -38,6 +75,9 @@ cp -a "$SRC/shader/cp2077.frag" "$HYPR/shaders/cp2077.frag"
 cp -a "$SRC/hooks/cp2077-jacked-in.sh" "$CFG/omarchy/hooks/post-boot.d/cp2077-jacked-in.sh"
 rm -rf "$CFG/omarchy/plugins/nightcity.workspaces"
 cp -a "$SRC/plugin/nightcity.workspaces" "$CFG/omarchy/plugins/nightcity.workspaces"
+rm -rf "$CFG/omarchy/plugins/nightcity.frame"
+cp -a "$SRC/plugin/nightcity.frame" "$CFG/omarchy/plugins/nightcity.frame"
+install_nightcity_lock
 rm -rf "$HOME_DIR/.local/share/icons/Nightcity"
 cp -a "$SRC/icons/Nightcity" "$HOME_DIR/.local/share/icons/Nightcity"
 rm -f "$HOME_DIR/.local/share/icons/Nightcity/icon-theme.cache"
@@ -68,19 +108,12 @@ file.write_text(text if text.endswith("\n") else text + "\n")
 PY
 }
 
-# Skip when this machine already has the block, so a re-run does not double it.
-if ! grep -q 'cp2077.frag' "$HYPR/looknfeel.lua" 2>/dev/null; then
-  upsert "$HYPR/looknfeel.lua" nightcity-glitch "$(cat "$SRC/extras/looknfeel.lua")"
-fi
-if ! grep -q 'OMARCHY_MENU_FONT' "$HYPR/hyprland.lua" 2>/dev/null; then
-  upsert "$HYPR/hyprland.lua" nightcity-path "$(cat "$SRC/extras/hyprland.lua")"
-fi
-if ! grep -q 'cp2077-glitch' "$HYPR/bindings.lua" 2>/dev/null; then
-  upsert "$HYPR/bindings.lua" nightcity-key "$(cat "$SRC/extras/bindings.lua")"
-fi
-if ! grep -q 'cp2077-walls' "$HYPR/autostart.lua" 2>/dev/null; then
-  upsert "$HYPR/autostart.lua" nightcity-start "$(cat "$SRC/extras/autostart.lua")"
-fi
+# The markers belong to the theme. A re-run replaces that block and leaves
+# the rest of the file. It does not add a second copy.
+upsert "$HYPR/looknfeel.lua" nightcity-glitch "$(cat "$SRC/extras/looknfeel.lua")"
+upsert "$HYPR/hyprland.lua" nightcity-path "$(cat "$SRC/extras/hyprland.lua")"
+upsert "$HYPR/bindings.lua" nightcity-key "$(cat "$SRC/extras/bindings.lua")"
+upsert "$HYPR/autostart.lua" nightcity-start "$(cat "$SRC/extras/autostart.lua")"
 
 python3 - << 'PY'
 import json
@@ -114,6 +147,46 @@ if not found:
         if isinstance(item, dict) and item.get("id") == "omarchy.menu":
             at = i + 1
     left.insert(at, {"id": "nightcity.workspaces"})
+
+def entry_id(entry):
+    if isinstance(entry, dict):
+        return str(entry.get("id") or "")
+    if isinstance(entry, str):
+        return entry
+    return ""
+
+plugins = data.setdefault("plugins", [])
+if not isinstance(plugins, list):
+    plugins = []
+    data["plugins"] = plugins
+ids = [entry_id(entry) for entry in plugins]
+
+# One frame painter. A machine that already has one is left on that id.
+if not any(plugin_id.endswith(".frame") for plugin_id in ids):
+    plugins.append({"id": "nightcity.frame"})
+    ids.append("nightcity.frame")
+
+lock_dir = Path.home() / ".config/omarchy/plugins/nightcity.lock"
+other_lock = any(plugin_id.endswith(".lock") and plugin_id != "nightcity.lock" for plugin_id in ids)
+if lock_dir.is_dir() and not other_lock and "nightcity.lock" not in ids:
+    plugins.append({"id": "nightcity.lock"})
+    ids.append("nightcity.lock")
+
+# Disabling the stock lock is what lets this clone own the lock handler.
+if "nightcity.lock" in ids:
+    disabled = data.get("disabledPlugins")
+    if not isinstance(disabled, list):
+        disabled = []
+    if "omarchy.lock" not in disabled:
+        disabled.append("omarchy.lock")
+    data["disabledPlugins"] = disabled
+    restores = data.get("cloneSourceRestores")
+    if not isinstance(restores, list):
+        restores = []
+    if "nightcity.lock" not in restores:
+        restores.append("nightcity.lock")
+    data["cloneSourceRestores"] = restores
+
 bak = path.with_name("shell.json.nightcity-bak")
 if not bak.exists():
     bak.write_text(path.read_text())
@@ -141,6 +214,10 @@ Jacked in.
   Theme   cyberpunk-2077
   Glitch  Super+Shift+Alt+G
   Walls   they follow the desk
+  Frames  nightcity.frame
+  Saver   Arasaka flatline
 
 The glitch redraws every frame. Small battery cost. The key turns it off.
+The lock clone is installed only when no other lock plugin is already enabled.
+See NOTES.md before changing the shader, the frames, or the lock.
 EOF
