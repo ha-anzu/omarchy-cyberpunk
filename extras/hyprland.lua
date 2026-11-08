@@ -10,3 +10,7 @@ for dir in (os.getenv("PATH") or "/usr/bin"):gmatch("[^:]+") do
 end
 hl.env("PATH", table.concat(path_parts, ":"))
 hl.env("OMARCHY_MENU_FONT", "Outfit")
+hl.env("HYPRCURSOR_THEME", "nightcity")
+hl.env("HYPRCURSOR_SIZE", "32")
+hl.env("XCURSOR_THEME", "nightcity")
+hl.env("XCURSOR_SIZE", "32")

@@ -122,6 +122,13 @@ install_nightcity_polkit
 rm -rf "$HOME_DIR/.local/share/icons/Nightcity"
 cp -a "$SRC/icons/Nightcity" "$HOME_DIR/.local/share/icons/Nightcity"
 rm -f "$HOME_DIR/.local/share/icons/Nightcity/icon-theme.cache"
+if ! python3 "$SRC/cursor/build.py" "$SRC/cursor" "$HOME_DIR/.local/share/icons/nightcity"; then
+  echo "Pointer theme was not built. It needs magick and hyprcursor-util."
+fi
+if command -v gsettings >/dev/null && [[ -d $HOME_DIR/.local/share/icons/nightcity/cursors || -d $HOME_DIR/.local/share/icons/nightcity/hyprcursors ]]; then
+  gsettings set org.gnome.desktop.interface cursor-theme nightcity
+  gsettings set org.gnome.desktop.interface cursor-size 32
+fi
 
 menu="$CFG/omarchy/extensions/omarchy-menu.jsonc"
 if [[ -f $menu && ! -f $menu.nightcity-bak ]]; then
@@ -261,6 +268,9 @@ fi
 
 if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null; then
   hyprctl reload >/dev/null 2>&1 || true
+  if [[ -d $HOME_DIR/.local/share/icons/nightcity ]]; then
+    hyprctl setcursor nightcity 32 >/dev/null 2>&1 || true
+  fi
   setsid "$CFG/omarchy/bin/cp2077-walls" >/dev/null 2>&1 < /dev/null &
   setsid "$CFG/omarchy/bin/cp2077-keys" >/dev/null 2>&1 < /dev/null &
 fi
@@ -278,6 +288,7 @@ Jacked in.
   Walls   they follow the desk
   Frames  nightcity.frame
   Saver   breach protocol
+  Pointer nightcity
 
 The glitch redraws every frame. Small battery cost. The key turns it off.
 The lock clone is installed only when no other lock plugin is already enabled.

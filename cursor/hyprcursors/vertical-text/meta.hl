@@ -1,0 +1,6 @@
+resize_algorithm = bilinear
+hotspot_x = 0.5000
+hotspot_y = 0.5000
+nominal_size = 1
+
+define_size = 0, cursor.svg

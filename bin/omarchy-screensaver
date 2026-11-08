@@ -123,6 +123,10 @@ class Draw:
         self.fill(color)
         self.args.extend(["-annotate", f"+{int(x)}+{int(y)}", message])
 
+    def center_text(self, y, message, color):
+        self.fill(color)
+        self.args.extend(["-gravity", "North", "-annotate", f"+0+{int(y)}", message, "-gravity", "NorthWest"])
+
     def rect(self, x0, y0, x1, y1, color):
         self.fill(color)
         self.args.extend(["-draw", f"rectangle {int(x0)},{int(y0)} {int(x1)},{int(y1)}"])
@@ -197,25 +201,28 @@ def render(width, height, tick, sixel=True):
     # Cyan tick on the top-left chamfer, the same accent as the window frames.
     d.line(margin + d.px(8), d.px(78), margin + d.px(8), d.px(96), CYAN, 3)
 
-    title_y = d.px(108)
-    shift = d.px(10) if glitch else 0
-    d.font(SANS, 42)
-    d.text(d.px(86) + shift, title_y, "BREACH PROTOCOL", YELLOW)
-    d.font(SANS_REG, 16)
-    d.text(d.px(88), title_y + d.px(46), "NETWATCH    //    ACCESS POINT", YELLOW_DIM)
+    # The words are the screen. CONNECTION stays yellow. FLATLINED is the flatline red.
+    shift = d.px(12) if glitch else 0
+    d.font(SANS_REG, 18)
+    d.center_text(d.px(72), "BREACH PROTOCOL", YELLOW_DIM)
+    d.font(SANS, 84)
+    d.center_text(d.px(112) + shift, "CONNECTION", YELLOW)
+    d.font(SANS, 120)
+    d.center_text(d.px(214), "FLATLINED", RED)
 
+    rule_y = d.px(360)
+    d.line(d.px(86), rule_y, width - d.px(86), rule_y, YELLOW, 1)
     trace = int(tick * 0.45)
     trace_color = RED if trace % 40 > 32 else CYAN
     d.font(MONO, 18)
-    d.text(width - d.px(300), title_y - d.px(4), f"TRACE   {trace // 60:02d}:{trace % 60:02d}", trace_color)
-
-    d.line(d.px(86), title_y + d.px(68), width - d.px(86), title_y + d.px(68), YELLOW, 1)
+    d.text(width - d.px(300), rule_y - d.px(28), f"TRACE   {trace // 60:02d}:{trace % 60:02d}", trace_color)
+    drop = d.px(200)
 
     # Sequences. Completed rows stay readable and quiet. The active row is the bright one.
     d.font(SANS, 15)
-    d.text(d.px(88), d.px(196), "SEQUENCE", YELLOW)
+    d.text(d.px(88), d.px(196) + drop, "SEQUENCE", YELLOW)
     for i, item in enumerate(DAEMONS):
-        y = d.px(250) + i * d.px(78)
+        y = d.px(250) + drop + i * d.px(78)
         active = i == daemon_i and not done
         finished = i < daemon_i or (i == daemon_i and done)
         if active:
@@ -231,7 +238,7 @@ def render(width, height, tick, sixel=True):
 
     # Breach grid.
     gx = d.px(600)
-    gy = d.px(230)
+    gy = d.px(230) + drop
     cw = d.px(148)
     ch = max(d.px(90), (height - d.px(170) - gy) // ROWS)
     lit = set(daemon["path"][: cursor + (0 if done else 1)])
@@ -264,32 +271,32 @@ def render(width, height, tick, sixel=True):
     # Buffer and ice, on the right. Short, and not a second picture.
     rx = gx + COLS * cw + d.px(36)
     d.font(SANS, 15)
-    d.text(rx, d.px(196), "BUFFER", YELLOW)
+    d.text(rx, d.px(196) + drop, "BUFFER", YELLOW)
     pips = 8
     filled = min(pips, daemon["cost"] + (0 if done else cursor))
     for i in range(pips):
         x = rx + (i % 4) * d.px(36)
-        y = d.px(220) + (i // 4) * d.px(28)
+        y = d.px(220) + drop + (i // 4) * d.px(28)
         if i < filled:
             d.rect(x, y, x + d.px(24), y + d.px(14), YELLOW)
         else:
             d.line(x, y, x + d.px(24), y, YELLOW_DIM, 1)
             d.line(x, y + d.px(14), x + d.px(24), y + d.px(14), YELLOW_DIM, 1)
     d.font(MONO, 16)
-    d.text(rx, d.px(300), f"RAM   {daemon['cost']:02d}", CYAN if not done else YELLOW_DIM)
+    d.text(rx, d.px(300) + drop, f"RAM   {daemon['cost']:02d}", CYAN if not done else YELLOW_DIM)
 
     d.font(SANS, 15)
-    d.text(rx, d.px(370), "ICE", YELLOW)
+    d.text(rx, d.px(370) + drop, "ICE", YELLOW)
     d.font(SANS, 22)
-    d.text(rx, d.px(408), "BLACKWALL", YELLOW_SOFT)
+    d.text(rx, d.px(408) + drop, "BLACKWALL", YELLOW_SOFT)
     d.font(MONO, 16)
-    d.text(rx, d.px(440), "LAYER   03", YELLOW_DIM)
+    d.text(rx, d.px(440) + drop, "LAYER   03", YELLOW_DIM)
     d.font(SANS, 15)
-    d.text(rx, d.px(510), "UPLINK", YELLOW)
+    d.text(rx, d.px(510) + drop, "UPLINK", YELLOW)
     d.font(SANS, 22)
-    d.text(rx, d.px(548), "NIGHT CITY", YELLOW_SOFT)
+    d.text(rx, d.px(548) + drop, "NIGHT CITY", YELLOW_SOFT)
     d.font(MONO, 14)
-    d.text(rx, d.px(584), "v.47", YELLOW_DIM)
+    d.text(rx, d.px(584) + drop, "v.47", YELLOW_DIM)
 
     # Upload rule along the bottom.
     by = height - d.px(70)

@@ -1,0 +1,17 @@
+resize_algorithm = bilinear
+hotspot_x = 0.0938
+hotspot_y = 0.0625
+nominal_size = 1
+define_override = default
+define_override = arrow
+define_override = top_left_arrow
+define_override = right_ptr
+define_override = context-menu
+define_override = help
+define_override = question_arrow
+define_override = copy
+define_override = alias
+define_override = dnd-move
+define_override = dnd-ask
+define_override = draft
+define_size = 0, cursor.svg

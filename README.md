@@ -29,9 +29,10 @@ Do not use `omarchy theme install` on this repo. It strips the lua.
 | Desks | NET · ICE · BD · DOC · DECK, then it repeats |
 | Walls | one picture per desk |
 | Glitch | `Super+Shift+Alt+G` |
-| Frames | broken yellow lines; the focused window glows |
+| Frames | broken yellow lines; the focused window glows, with a dim red wash behind it |
 | Lock | 1 px stroke, no glow, on the page, the password, and the fingerprint |
-| Saver | a breach protocol |
+| Saver | breach protocol, headline CONNECTION FLATLINED |
+| Pointer | yellow arrow, dark edge, cyan tick |
 | Bar | district callsigns, clock says NC |
 
 ## Two things to know
@@ -40,7 +41,7 @@ The glitch redraws the whole screen so it can move. On a Flow Z13 that was about
 
 ASUS lights flicker with it. A ROG Flow Z13 (GZ301ZE) cycles yellow, cyan, red, and neon green across the whole keyboard. It is one backlight zone, and the color is live only. Another keyboard: hand your agent `KEYBOARD.md`. It picks the method from the model.
 
-Window frames are broken yellow lines, and only the focused window glows. The lock page, the password plate, the fingerprint plate, and a polkit fingerprint prompt stay a 1 px stroke with no glow. The idle screen is a breach protocol. `NOTES.md` is the short version. `CHANGES.md` is the full record.
+Window frames are broken yellow lines. Only the focused window glows, and a very dim red wash sits behind it. Those frames hide while the screensaver is up. The lock page, the password plate, the fingerprint plate, and a polkit fingerprint prompt stay a 1 px stroke with no glow. The idle screen is a breach protocol with CONNECTION FLATLINED across the top. The pointer is the same yellow. `NOTES.md` is the short version. `CHANGES.md` is the full record.
 
 ## 60 Hz
 
@@ -48,6 +49,6 @@ Not installed for you. Output names differ. The snippet is `extras/monitors-60hz
 
 ## Whose art this is
 
-Colors follow the public cyberpunk.net page. No CDPR font, logo, screenshot, or wallpaper file is in this repo. The walls and icons shipped here are original. The screensaver is an original breach screen. The encoder source is in the repo. The compiled binary is not.
+Colors follow the public cyberpunk.net page. No CDPR font, logo, screenshot, or wallpaper file is in this repo. The walls and icons shipped here are original. The screensaver is an original breach screen. The encoder source and the pointer drawings are in the repo. The compiled binaries are not.
 
 If the free desktop wallpapers are already in `~/.local/share/omarchy/cyberpunk-wallpapers`, the wall script uses them when the file for that desk is present. The filenames are in `NOTES.md`. This repo does not download them.

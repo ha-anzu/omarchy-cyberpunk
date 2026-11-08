@@ -3,3 +3,4 @@ icon-theme.cache
 __pycache__/
 *.pyc
 bin/cp2077-sixel
+*.hlc

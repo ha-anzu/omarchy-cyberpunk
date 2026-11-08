@@ -8,12 +8,14 @@ import qs.Commons
 // This layer paints the real frame: a broken stroke, a different cut on
 // each corner, gaps in the runs, and a 1px shift so the halves do not meet.
 // The focused window is thicker and is the only one that glows.
+// A wide dim red wash sits behind that glow. Lock plates do not use this.
 Item {
   id: root
 
   property int step: 0
   property int revision: 0
   property string seen: ""
+  property bool covered: false
 
   function mix(seed, salt) {
     var n = (seed ^ Math.imul(salt + 1, 0x9e3779b1)) >>> 0
@@ -38,18 +40,53 @@ Item {
     for (var i = 0; i < toplevels.length; i++) {
       var ipc = toplevels[i].lastIpcObject
       if (!ipc || !ipc.at || !ipc.size) continue
-      parts.push(ipc.address + ":" + ipc.at[0] + "," + ipc.at[1] + ":" + ipc.size[0] + "x" + ipc.size[1] + ":" + ipc.fullscreen + ":" + (ipc.hidden ? 1 : 0) + ":" + (ipc.workspace ? ipc.workspace.id : ""))
+      var wsName = ipc.workspace && ipc.workspace.name ? ipc.workspace.name : ""
+      parts.push(ipc.address + ":" + ipc.at[0] + "," + ipc.at[1] + ":" + ipc.size[0] + "x" + ipc.size[1] + ":" + ipc.fullscreen + ":" + (ipc.hidden ? 1 : 0) + ":" + wsName + ":" + (ipc["class"] || ""))
     }
     var active = Hyprland.activeToplevel
     parts.push("#" + (active ? active.address : "") + "@" + root.step)
+    var monitors = Hyprland.monitors.values
+    for (var m = 0; m < monitors.length; m++) {
+      var mon = monitors[m].lastIpcObject
+      var special = mon && mon.specialWorkspace
+      parts.push("@" + (special && special.name ? special.name : ""))
+    }
     return parts.join(";")
+  }
+
+  // The frame layer is an overlay, above the screensaver window. The saver
+  // workspace is special:screensaver-<output>, so a suffix check misses it
+  // and the windows underneath keep their strokes on the breach screen.
+  function anyScreensaver() {
+    var toplevels = Hyprland.toplevels.values
+    var i
+    for (i = 0; i < toplevels.length; i++) {
+      var toplevel = toplevels[i]
+      var ipc = toplevel.lastIpcObject
+      if (!ipc || !ipc.mapped || ipc.hidden) continue
+      var klass = String(ipc["class"] || "")
+      if (klass === "org.omarchy.screensaver") return true
+      var wsName = toplevel.workspace ? String(toplevel.workspace.name || "") : ""
+      if (!wsName && ipc.workspace) wsName = String(ipc.workspace.name || "")
+      if (wsName.indexOf("screensaver") !== -1) return true
+    }
+    var monitors = Hyprland.monitors.values
+    for (i = 0; i < monitors.length; i++) {
+      var mon = monitors[i].lastIpcObject
+      var special = mon && mon.specialWorkspace
+      var specialName = special ? String(special.name || "") : ""
+      if (specialName.indexOf("screensaver") !== -1) return true
+    }
+    return false
   }
 
   function refresh() {
     Hyprland.refreshToplevels()
     Qt.callLater(function() {
+      var covered = root.anyScreensaver()
+      if (covered !== root.covered) root.covered = covered
       var next = root.signature()
-      if (next === root.seen) return
+      if (!covered && next === root.seen) return
       root.seen = next
       root.revision++
     })
@@ -78,8 +115,9 @@ Item {
     function onRawEvent(event) {
       var name = event.name
       if (name === "openwindow" || name === "closewindow" || name === "movewindow"
-          || name === "changefloatingmode" || name === "fullscreen" || name === "workspace"
-          || name === "focusedmon" || name === "activewindow" || name === "pin") {
+          || name === "movewindowv2" || name === "changefloatingmode" || name === "fullscreen"
+          || name === "workspace" || name === "activespecial" || name === "focusedmon"
+          || name === "activewindow" || name === "pin") {
         root.refresh()
       }
     }
@@ -137,6 +175,7 @@ Item {
   function paint(ctx, monitor, width, height) {
     ctx.clearRect(0, 0, width, height)
     if (!monitor || !monitor.activeWorkspace) return
+    if (root.covered || root.anyScreensaver()) return
     var workspaceId = monitor.activeWorkspace.id
     var special = monitor.lastIpcObject && monitor.lastIpcObject.specialWorkspace
     var specialId = special && special.id ? special.id : 0
@@ -150,6 +189,7 @@ Item {
       if (!ipc || !ipc.at || !ipc.size || !ipc.mapped) continue
       if (ipc.hidden) continue
       if (ipc.fullscreen >= 2) continue
+      if (String(ipc["class"] || "") === "org.omarchy.screensaver") continue
       if (!toplevel.monitor || toplevel.monitor.id !== monitor.id) continue
       var onWorkspace = toplevel.workspace && (toplevel.workspace.id === workspaceId || (specialId !== 0 && toplevel.workspace.id === specialId))
       if (!onWorkspace && !ipc.pinned) continue
@@ -211,10 +251,19 @@ Item {
         if (edge[6]) root.drawChamfer(ctx, edge[0], edge[1], edge[2], edge[3], seed, edge[4])
         else root.drawRun(ctx, edge[0], edge[1], edge[2], edge[3], seed, edge[4], edge[5])
       }
-      // One halo pass on the focused window. A wider stack reads as a second border.
+      // Yellow stays one close pass. A wider yellow stack reads as a second border.
+      // The red wash is one wide, very dim pass behind it, so the active page
+      // looks lit from the back without a second line.
       ctx.lineCap = "butt"
       var e
       if (win.hot) {
+        for (e = 0; e < edges.length; e++) {
+          ctx.beginPath()
+          ctx.lineWidth = weight(edges[e][4]) + 28
+          ctx.strokeStyle = "rgba(255, 132, 136, 0.07)"
+          trace(edges[e])
+          ctx.stroke()
+        }
         for (e = 0; e < edges.length; e++) {
           ctx.beginPath()
           ctx.lineWidth = weight(edges[e][4]) + 7
@@ -261,6 +310,7 @@ Item {
       required property var modelData
 
       screen: modelData
+      visible: !root.covered
       color: "transparent"
       exclusionMode: ExclusionMode.Ignore
       WlrLayershell.namespace: "nightcity-frame"

@@ -19,8 +19,11 @@ The glitch key is Super+Shift+Alt+G. Leave it.
 
 The frame plugin id is nightcity.frame. Hyprland's border stays 0 and
 the shadow stays off. Hyprland at/size are already logical pixels.
-Do not divide them by monitor.scale. Only the focused window glows,
-and that glow is one halo pass. Do not enable a second frame plugin.
+Do not divide them by monitor.scale. Only the focused window glows:
+one yellow halo, then one dim red wash at lineWidth + 28 and alpha 0.07.
+The frame layer hides while the screensaver is up. The workspace name
+is special:screensaver-<output>. Match the substring screensaver.
+Do not enable a second frame plugin.
 A QML change needs `omarchy restart shell` because the service stays loaded.
 
 The lock clone is nightcity.lock. The polkit clone is nightcity.polkit.
@@ -34,6 +37,11 @@ cp2077-sixel beside it with gcc. Do not commit that binary. The sixel
 header keeps P2 = 2 so black stays opaque. Any key or a lost window
 exits the saver, and it must restore cursor:invisible to false.
 Do not pkill -f the screensaver path.
+The headline is CONNECTION in yellow and FLATLINED in red.
+
+The pointer theme is nightcity, size 32. install.sh builds it from
+cursor/. Do not commit the compiled cursor. The saver must restore
+cursor:invisible to false.
 
 If I also want the keyboard to glitch, read KEYBOARD.md first.
 Detect the keyboard. Do not reuse the ASUS script on other hardware.
