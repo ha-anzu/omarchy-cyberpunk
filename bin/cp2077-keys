@@ -1,16 +1,147 @@
 #!/bin/bash
-# Keyboard backlight glitch for the ASUS TUF single-zone light.
-# Brightness moves through logind. The color node is root-only, so this
-# cuts the light out and back instead of swapping yellow / cyan / red.
-# Stays quiet while the screen glitch is toggled off.
+# Keyboard glitch.
+# Most ASUS boards flicker asus::kbd_backlight. The ROG Flow Z13 GZ301ZE has
+# no kbd_rgb_mode node, so that model cycles live Aura color instead.
+# Neither path writes a color into controller flash.
 set -u
 
-dev="asus::kbd_backlight"
 flag="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/cp2077-glitch-off"
 lock="${XDG_RUNTIME_DIR:-/tmp}/cp2077-keys.lock"
+dev="asus::kbd_backlight"
 
 exec 9>"$lock"
 flock -n 9 || exit 0
+
+# Model name only. Do not read product_serial, board_serial, or product_uuid.
+product="$(cat /sys/class/dmi/id/product_name 2>/dev/null || true)"
+
+# Live static color on the Flow Z13. Discovers Aura objects. A color write
+# reapplies the brightness asusd has saved, so the live backlight level is
+# stored first and a burst does not yank it.
+flow_z13_color() {
+  local -a devs=()
+  local path now
+  while IFS= read -r path; do
+    [[ -n $path ]] || continue
+    busctl get-property xyz.ljones.Asusd "$path" xyz.ljones.Aura LedModeData >/dev/null 2>&1 || continue
+    devs+=("$path")
+  done < <(busctl tree xyz.ljones.Asusd 2>/dev/null | grep -oE '/xyz/ljones/aura/[A-Za-z0-9_]+' || true)
+  ((${#devs[@]})) || return 1
+  brightnessctl -d "$dev" get >/dev/null 2>&1 || return 1
+
+  c_read_color() {
+    busctl get-property xyz.ljones.Asusd "${devs[0]}" xyz.ljones.Aura LedModeData 2>/dev/null \
+      | python3 -c 'import sys
+parts = sys.stdin.read().split()
+nums = []
+for part in parts[1:]:
+    if part.isdigit():
+        nums.append(part)
+    else:
+        break
+if len(nums) < 5:
+    raise SystemExit(1)
+print(nums[2], nums[3], nums[4])'
+  }
+
+  c_set_color() {
+    local r=$1 g=$2 b=$3 path
+    for path in "${devs[@]}"; do
+      busctl set-property xyz.ljones.Asusd "$path" xyz.ljones.Aura LedModeData \
+        '(uu(yyy)(yyy)ss)' 0 0 "$r" "$g" "$b" 0 0 0 "Med" "Right" >/dev/null
+    done
+  }
+
+  read -r base_r base_g base_b < <(c_read_color) || return 1
+
+  c_restore() {
+    [[ -n ${base_r:-} ]] && c_set_color "$base_r" "$base_g" "$base_b" || true
+  }
+  c_stop() {
+    c_restore
+    exit 0
+  }
+  trap c_restore EXIT
+  trap c_stop INT TERM
+
+  c_light_off() {
+    now="$(brightnessctl -d "$dev" get 2>/dev/null || echo 1)"
+    [[ $now == 0 ]]
+  }
+
+  saved_bright=""
+  c_sync_brightness() {
+    local path
+    now="$(brightnessctl -d "$dev" get 2>/dev/null || echo 0)"
+    [[ $now == 0 || $now == "$saved_bright" ]] && return 0
+    for path in "${devs[@]}"; do
+      busctl set-property xyz.ljones.Asusd "$path" xyz.ljones.Aura Brightness u "$now" >/dev/null
+    done
+    saved_bright=$now
+  }
+
+  c_next_gap() {
+    local span=$((40 + RANDOM % 50))
+    if ((RANDOM % 5 == 0)); then
+      span=$((span / 2))
+    fi
+    printf '%s\n' "$span"
+  }
+
+  c_burst() {
+    local steps=$((4 + RANDOM % 3))
+    local i=0 hold pick
+    local -a palette=("252 238 10" "0 240 255" "254 16 56")
+    while ((i < steps)); do
+      [[ -f $flag ]] && return 0
+      c_light_off && return 0
+      pick="${palette[$((RANDOM % 3))]}"
+      # shellcheck disable=SC2086
+      c_set_color $pick || return 0
+      hold="0.0$((4 + RANDOM % 5))"
+      sleep "$hold"
+      i=$((i + 1))
+    done
+    c_set_color "$base_r" "$base_g" "$base_b" || true
+  }
+
+  local paused=0 gap waited fresh
+  while true; do
+    if [[ -f $flag ]] || c_light_off; then
+      if ((paused == 0)); then
+        c_restore
+        paused=1
+      fi
+      sleep 0.4
+      continue
+    fi
+    paused=0
+    c_sync_brightness
+    if fresh="$(c_read_color)"; then
+      read -r base_r base_g base_b <<<"$fresh"
+    fi
+    gap="$(c_next_gap)"
+    waited=0
+    while ((waited < gap)); do
+      sleep 0.2
+      waited=$((waited + 2))
+      [[ -f $flag ]] && continue 2
+      if c_light_off; then
+        sleep 0.4
+        continue 2
+      fi
+      if fresh="$(c_read_color)"; then
+        read -r base_r base_g base_b <<<"$fresh"
+      fi
+    done
+    c_burst
+    sleep 0.15
+  done
+}
+
+if [[ $product == *GZ301ZE* ]]; then
+  flow_z13_color
+fi
 
 if ! brightnessctl -d "$dev" get >/dev/null 2>&1; then
   exit 0
@@ -30,35 +161,35 @@ trap restore EXIT INT TERM
 
 # Quiet time between hits, in tenths of a second. Short, and not a beat.
 next_gap() {
-  local span=$(( 40 + RANDOM % 50 ))
-  if (( RANDOM % 5 == 0 )); then
-    span=$(( span / 2 ))
+  local span=$((40 + RANDOM % 50))
+  if ((RANDOM % 5 == 0)); then
+    span=$((span / 2))
   fi
   printf '%s\n' "$span"
 }
 
 burst() {
   local step hold
-  local steps=$(( 4 + RANDOM % 3 ))
+  local steps=$((4 + RANDOM % 3))
   local i=0
-  while (( i < steps )); do
+  while ((i < steps)); do
     [[ -f $flag ]] && return 0
-    if (( i % 2 == 0 )); then
+    if ((i % 2 == 0)); then
       step=0
     else
       step=3
     fi
     set_level "$step"
-    hold="0.0$(( 4 + RANDOM % 5 ))"
+    hold="0.0$((4 + RANDOM % 5))"
     sleep "$hold"
-    i=$(( i + 1 ))
+    i=$((i + 1))
   done
   set_level "$base"
 }
 
 while true; do
   if [[ -f $flag ]]; then
-    if (( paused == 0 )); then
+    if ((paused == 0)); then
       restore
       paused=1
     fi
@@ -76,9 +207,9 @@ while true; do
 
   gap="$(next_gap)"
   waited=0
-  while (( waited < gap )); do
+  while ((waited < gap)); do
     sleep 0.2
-    waited=$(( waited + 2 ))
+    waited=$((waited + 2))
     [[ -f $flag ]] && continue 2
     now="$(brightnessctl -d "$dev" get 2>/dev/null || echo "$base")"
     if [[ $now == 0 ]]; then

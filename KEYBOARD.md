@@ -31,6 +31,7 @@ Use the first row that matches.
 
 | You find | Path |
 |---|---|
+| Product name contains `GZ301ZE` | Flow Z13 color. The script in this repo does it. See below |
 | `asus::kbd_backlight` and a writable `kbd_rgb_mode` | ASUS color |
 | `asus::kbd_backlight`, color node not writable | ASUS brightness. This is the script in the repo |
 | `asusctl` works, no writable color node | asusctl, one live color at a time |
@@ -60,6 +61,22 @@ Cyan is `0 0 0 240 255 1`. Red is `0 0 254 16 56 1`.
 `brightnessctl -d 'asus::kbd_backlight'`. Max is often 3 on TUF, not always. Read it.
 
 The repo script already does this and exits if the LED is missing.
+
+## ROG Flow Z13 GZ301ZE
+
+The product name is `ROG Flow Z13 GZ301ZE`. That is the model. Do not read or write `product_serial`, `board_serial`, `product_uuid`, a hostname, or a home path.
+
+There is no `kbd_rgb_mode` node, so the sysfs save bit is not available. Color goes through asusd. The keyboard is two N-KEY devices, USB `0b05:18c6` and `0b05:1a30`. Find their Aura objects. Do not copy an object path off one machine. The interface numbers at the end of the path are not part of the model.
+
+```bash
+busctl tree xyz.ljones.Asusd | grep -oE '/xyz/ljones/aura/[A-Za-z0-9_]+'
+```
+
+Write `LedModeData` as static (`0`), one live color, speed `Med`, direction `Right`. Yellow is `252 238 10`, cyan `0 240 255`, red `254 16 56`. Then write the color that was already showing.
+
+A color write reapplies the brightness saved in asusd. Before the first burst, set the Aura `Brightness` property from the current `asus::kbd_backlight` level, and do it again if that level changes. If the backlight is `0`, leave it off.
+
+`bin/cp2077-keys` takes this branch when the product name contains `GZ301ZE`. Other machines stay on the brightness flicker.
 
 ## asusctl
 

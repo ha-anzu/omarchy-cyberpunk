@@ -35,7 +35,7 @@ Do not use `omarchy theme install` on this repo. It strips the lua.
 
 The glitch redraws the whole screen so it can move. Small battery cost. The same key turns it off.
 
-ASUS lights flicker with it. Another keyboard: hand your agent `KEYBOARD.md`. It picks the method from the model.
+ASUS lights flicker with it. A ROG Flow Z13 (GZ301ZE) cycles yellow, cyan, and red instead. Another keyboard: hand your agent `KEYBOARD.md`. It picks the method from the model.
 
 ## 60 Hz
 
