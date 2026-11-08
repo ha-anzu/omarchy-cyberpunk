@@ -5,8 +5,9 @@ import Quickshell.Wayland
 import qs.Commons
 
 // Hyprland draws one continuous border with one chamfer for every corner.
-// This layer paints the real frame: a 1px stroke, a different cut on each
-// corner, gaps in the runs, and a 1px shift so the halves do not meet.
+// This layer paints the real frame: a broken stroke, a different cut on
+// each corner, gaps in the runs, and a 1px shift so the halves do not meet.
+// The focused window is thicker and is the only one that glows.
 Item {
   id: root
 
@@ -94,16 +95,15 @@ Item {
     var leadB = 2 + Math.round(root.mix(seed, salt + 1) * 7)
     var span = len - leadA - leadB
     if (span < 8) return
-    var gap = Math.round(12 + root.mix(seed, salt + 2) * 22)
-    if (gap > span * 0.5) gap = Math.round(span * 0.38)
-    var center = leadA + span * (0.22 + root.mix(seed, salt + 3) * 0.52) + slide
+    var gap = Math.round(6 + root.mix(seed, salt + 2) * 8)
+    if (gap > span * 0.22) gap = Math.round(span * 0.18)
+    var center = leadA + span * (0.28 + root.mix(seed, salt + 3) * 0.44) + slide
     var g0 = center - gap / 2
     var g1 = center + gap / 2
-    // Both halves step inward, by different amounts, so the run is broken
-    // and the two pieces are not colinear.
-    var shiftA = root.mix(seed, salt + 4) > 0.45 ? 1 : 0
-    var shiftB = 1 + (root.mix(seed, salt + 5) > 0.55 ? 1 : 0)
-    if ((root.step + salt) % 8 === 2) shiftA = shiftA === 0 ? 1 : 0
+    // One pixel of inward jog, so the break is a step and not a second border.
+    var shiftA = 0
+    var shiftB = 1
+    if ((root.step + salt) % 8 === 2) shiftA = 1
     var nx = horizontal ? 0 : (dy >= 0 ? -1 : 1)
     var ny = horizontal ? (dx >= 0 ? 1 : -1) : 0
     function point(distance, shift) {
@@ -141,7 +141,7 @@ Item {
     var special = monitor.lastIpcObject && monitor.lastIpcObject.specialWorkspace
     var specialId = special && special.id ? special.id : 0
     var active = Hyprland.activeToplevel
-    var activeAddress = active ? String(active.address) : ""
+    var activeAddress = active ? String(active.address || "").toLowerCase().replace(/^0x/, "") : ""
     var toplevels = Hyprland.toplevels.values
     var pending = []
     for (var i = 0; i < toplevels.length; i++) {
@@ -153,17 +153,23 @@ Item {
       if (!toplevel.monitor || toplevel.monitor.id !== monitor.id) continue
       var onWorkspace = toplevel.workspace && (toplevel.workspace.id === workspaceId || (specialId !== 0 && toplevel.workspace.id === specialId))
       if (!onWorkspace && !ipc.pinned) continue
-      var scale = monitor.scale > 0 ? monitor.scale : 1
-      var w = ipc.size[0] / scale - 6
-      var h = ipc.size[1] / scale - 6
+      // IPC at/size are already in this layer's logical pixels. Dividing by
+      // the output scale draws the frame inside the window.
+      var x = ipc.at[0] - (monitor.x || 0) + 3
+      var y = ipc.at[1] - (monitor.y || 0) + 3
+      var w = ipc.size[0] - 6
+      var h = ipc.size[1] - 6
       if (w < 24 || h < 24) continue
+      var visW = Math.min(x + w, width) - Math.max(x, 0)
+      var visH = Math.min(y + h, height) - Math.max(y, 0)
+      if (visW < 48 || visH < 48) continue
       pending.push({
-        x: (ipc.at[0] - monitor.x) / scale + 3,
-        y: (ipc.at[1] - monitor.y) / scale + 3,
+        x: x,
+        y: y,
         w: w,
         h: h,
         seed: root.seedOf(ipc.address || toplevel.address),
-        hot: String(ipc.address || toplevel.address) === activeAddress
+        hot: toplevel.activated === true || (activeAddress !== "" && String(ipc.address || toplevel.address || "").toLowerCase().replace(/^0x/, "") === activeAddress)
       })
     }
     pending.sort(function(a, b) { return (a.hot ? 1 : 0) - (b.hot ? 1 : 0) })
@@ -183,28 +189,66 @@ Item {
         Math.min(maxCut, 4 + Math.round(root.mix(seed, 4) * 16))
       ]
       var slide = (root.step - 3.5) * 1.4
-      ctx.beginPath()
-      ctx.lineWidth = 1
-      ctx.strokeStyle = win.hot ? "#FCEE0A" : "rgba(252, 238, 10, 0.42)"
-      root.drawRun(ctx, x + cuts[0], y, x + w - cuts[1], y, seed, 10, slide)
-      root.drawRun(ctx, x + w, y + cuts[1], x + w, y + h - cuts[2], seed, 20, -slide)
-      root.drawRun(ctx, x + w - cuts[2], y + h, x + cuts[3], y + h, seed, 30, slide * 0.6)
-      root.drawRun(ctx, x, y + h - cuts[3], x, y + cuts[0], seed, 40, -slide * 0.4)
-      root.drawChamfer(ctx, x + cuts[0], y, x, y + cuts[0], seed, 51)
-      root.drawChamfer(ctx, x + w - cuts[1], y, x + w, y + cuts[1], seed, 52)
-      root.drawChamfer(ctx, x + w, y + h - cuts[2], x + w - cuts[2], y + h, seed, 53)
-      root.drawChamfer(ctx, x, y + h - cuts[3], x + cuts[3], y + h, seed, 54)
-      ctx.stroke()
+      // Each edge keeps its own weight, and the weight breathes with the step.
+      // The focused window is thicker and is the only one with a halo.
+      var edges = [
+        [x + cuts[0], y, x + w - cuts[1], y, 10, slide, false],
+        [x + w, y + cuts[1], x + w, y + h - cuts[2], 20, -slide, false],
+        [x + w - cuts[2], y + h, x + cuts[3], y + h, 30, slide * 0.6, false],
+        [x, y + h - cuts[3], x, y + cuts[0], 40, -slide * 0.4, false],
+        [x + cuts[0], y, x, y + cuts[0], 51, 0, true],
+        [x + w - cuts[1], y, x + w, y + cuts[1], 52, 0, true],
+        [x + w, y + h - cuts[2], x + w - cuts[2], y + h, 53, 0, true],
+        [x, y + h - cuts[3], x + cuts[3], y + h, 54, 0, true]
+      ]
+      function weight(salt) {
+        var pulse = ((root.step + salt) % 8) / 7
+        var personality = root.mix(seed, salt + 8)
+        if (win.hot) return 1.7 + personality * 1.5 + pulse * (0.35 + personality * 0.9)
+        return 1.05 + personality * 0.55 + pulse * 0.25
+      }
+      function trace(edge) {
+        if (edge[6]) root.drawChamfer(ctx, edge[0], edge[1], edge[2], edge[3], seed, edge[4])
+        else root.drawRun(ctx, edge[0], edge[1], edge[2], edge[3], seed, edge[4], edge[5])
+      }
+      // One halo pass on the focused window. A wider stack reads as a second border.
+      ctx.lineCap = "butt"
+      var e
+      if (win.hot) {
+        for (e = 0; e < edges.length; e++) {
+          ctx.beginPath()
+          ctx.lineWidth = weight(edges[e][4]) + 7
+          ctx.strokeStyle = "rgba(252, 238, 10, 0.22)"
+          trace(edges[e])
+          ctx.stroke()
+        }
+      }
+      for (e = 0; e < edges.length; e++) {
+        ctx.beginPath()
+        ctx.lineWidth = weight(edges[e][4])
+        ctx.strokeStyle = win.hot ? "#FCEE0A" : "rgba(252, 238, 10, 0.42)"
+        trace(edges[e])
+        ctx.stroke()
+      }
 
       if (!win.hot) continue
       var longest = 0
       for (var c = 1; c < 4; c++) if (cuts[c] > cuts[longest]) longest = c
+      function tickPath() {
+        if (longest === 0) ctx.moveTo(x + 4, y + cuts[0] + 3), ctx.lineTo(x + 4, y + cuts[0] + 16)
+        else if (longest === 1) ctx.moveTo(x + w - 4, y + cuts[1] + 3), ctx.lineTo(x + w - 4, y + cuts[1] + 16)
+        else if (longest === 2) ctx.moveTo(x + w - cuts[2] - 16, y + h - 4), ctx.lineTo(x + w - cuts[2] - 3, y + h - 4)
+        else ctx.moveTo(x + cuts[3] + 3, y + h - 4), ctx.lineTo(x + cuts[3] + 16, y + h - 4)
+      }
       ctx.beginPath()
+      ctx.lineWidth = 8
+      ctx.strokeStyle = "rgba(0, 240, 255, 0.35)"
+      tickPath()
+      ctx.stroke()
+      ctx.beginPath()
+      ctx.lineWidth = 2.4
       ctx.strokeStyle = "#00F0FF"
-      if (longest === 0) ctx.moveTo(x + 4, y + cuts[0] + 3), ctx.lineTo(x + 4, y + cuts[0] + 3 + 11)
-      else if (longest === 1) ctx.moveTo(x + w - 4, y + cuts[1] + 3), ctx.lineTo(x + w - 4, y + cuts[1] + 14)
-      else if (longest === 2) ctx.moveTo(x + w - cuts[2] - 14, y + h - 4), ctx.lineTo(x + w - cuts[2] - 3, y + h - 4)
-      else ctx.moveTo(x + cuts[3] + 3, y + h - 4), ctx.lineTo(x + cuts[3] + 15, y + h - 4)
+      tickPath()
       ctx.stroke()
     }
   }

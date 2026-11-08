@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "id": "nightcity.polkit",
+  "name": "Night City Polkit",
+  "version": "1.0.0",
+  "author": "ha-anzu",
+  "description": "Authentication dialog. The fingerprint plate uses the 1px broken frame.",
+  "omarchy": {
+    "capabilities": [
+      "authentication"
+    ],
+    "clonedFrom": "omarchy.polkit"
+  },
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "PolkitAgent.qml"
+  }
+}

@@ -1,344 +1,319 @@
 #!/usr/bin/env python3
-# Arasaka flatline. Omarchy launches this full screen when the machine sits idle.
-# The picture stays dead: blood-red, torn, and glowing. It does not recover.
-# Any key, or leaving the screensaver window, drops back to the desktop.
+# Netrunner breach. Omarchy runs this full screen in the idle terminal.
+# The picture is a Cyberpunk interface: a real font, a chamfered frame,
+# and a breach grid. Any key, or leaving the window, returns to the desktop.
 
+import fcntl
 import json
 import os
-import random
 import select
-import shutil
 import signal
+import struct
 import subprocess
 import sys
 import termios
 import time
 import tty
 
-YELLOW = "\033[38;2;252;238;10m"
-CYAN = "\033[38;2;0;240;255m"
-BLOOD = "\033[38;2;186;8;18m"
-DEEP = "\033[38;2;92;4;10m"
-HOT = "\033[38;2;255;36;48m"
-GLOW = "\033[38;2;255;150;150m"
-WHITE = "\033[38;2;255;228;228m"
-ASH = "\033[38;2;92;48;52m"
-GOLD = "\033[38;2;252;238;10m"
-RESET = "\033[0m"
+SANS = "/usr/share/fonts/noto/NotoSans-Medium.ttf"
+SANS_REG = "/usr/share/fonts/noto/NotoSans-Regular.ttf"
+MONO = "/usr/share/fonts/TTF/JetBrainsMonoNerdFont-Regular.ttf"
+ENCODER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cp2077-sixel")
 
-# Six-wide, six-tall. Wide enough to read, narrow enough for FLATLINED.
-FONT = {
-    "A": [" ███  ", "██ ██ ", "██ ██ ", "█████ ", "██ ██ ", "██ ██ "],
-    "R": ["████  ", "██ ██ ", "██ ██ ", "████  ", "██ ██ ", "██ ██ "],
-    "S": [" ████ ", "██    ", "███   ", "  ███ ", "   ██ ", "████  "],
-    "K": ["██ ██ ", "██ ██ ", "████  ", "███   ", "██ ██ ", "██ ██ "],
-    "F": ["█████ ", "██    ", "██    ", "████  ", "██    ", "██    "],
-    "L": ["██    ", "██    ", "██    ", "██    ", "██    ", "█████ "],
-    "T": ["█████ ", "  ██  ", "  ██  ", "  ██  ", "  ██  ", "  ██  "],
-    "I": ["█████ ", "  ██  ", "  ██  ", "  ██  ", "  ██  ", "█████ "],
-    "N": ["██ ██ ", "███ ██", "█████ ", "██ ███", "██ ██ ", "██ ██ "],
-    "E": ["█████ ", "██    ", "██    ", "████  ", "██    ", "█████ "],
-    "D": ["████  ", "██ ██ ", "██ ██ ", "██ ██ ", "██ ██ ", "████  "],
-    " ": ["      ", "      ", "      ", "      ", "      ", "      "],
-}
-GLYPH_H = 6
+YELLOW = "#FCEE0A"
+YELLOW_DIM = "#6E6412"
+YELLOW_SOFT = "#C6B63A"
+CYAN = "#00F0FF"
+RED = "#FE1038"
+INK = "#141200"
+GRID_LINE = "#2A2608"
 
+CODES = ("1C", "55", "7A", "BD", "E9", "FF")
 
-def size():
-    cols, rows = shutil.get_terminal_size((100, 36))
-    return max(cols, 40), max(rows, 16)
+# Orthogonal paths. The grid cells under a path show that daemon's sequence.
+DAEMONS = (
+    {
+        "name": "SYNAPSE BURN",
+        "seq": ("BD", "55", "E9", "1C"),
+        "path": ((0, 0), (0, 1), (0, 2), (1, 2)),
+        "cost": 4,
+    },
+    {
+        "name": "WEAPON GLITCH",
+        "seq": ("7A", "FF"),
+        "path": ((2, 4), (2, 5)),
+        "cost": 3,
+    },
+    {
+        "name": "REBOOT OPTICS",
+        "seq": ("E9", "1C", "BD"),
+        "path": ((3, 1), (4, 1), (4, 2)),
+        "cost": 5,
+    },
+    {
+        "name": "SONIC SHOCK",
+        "seq": ("55", "FF", "7A"),
+        "path": ((4, 4), (4, 5), (3, 5)),
+        "cost": 2,
+    },
+)
 
-
-def clip(text, cols):
-    if len(text) > cols:
-        return text[:cols]
-    return text + (" " * (cols - len(text)))
-
-
-def paint(text, color):
-    return color + text + RESET
-
-
-def big_word(word):
-    rows = [""] * GLYPH_H
-    for ch in word:
-        glyph = FONT.get(ch, FONT[" "])
-        for i in range(GLYPH_H):
-            rows[i] += glyph[i] + " "
-    return rows
+ROWS = 5
+COLS = 6
 
 
-def glow_color(tick):
-    # A dying phosphor. Mostly blood, sometimes hot, rarely a white spike.
-    phase = tick % 26
-    if phase == 0:
-        return WHITE
-    if phase < 4 or 12 <= phase < 16:
-        return HOT
-    if phase < 8:
-        return GLOW
-    return BLOOD
+def pixels():
+    if os.environ.get("CP2077_SAVER_PNG"):
+        return 1920, 1200
+    try:
+        packed = fcntl.ioctl(sys.stdout.fileno(), termios.TIOCGWINSZ, struct.pack("HHHH", 0, 0, 0, 0))
+        _rows, _cols, xpix, ypix = struct.unpack("HHHH", packed)
+        if xpix >= 640 and ypix >= 400:
+            # Leave one text row so the sixel does not scroll the terminal.
+            return xpix, max(400, ypix - 28)
+    except OSError:
+        pass
+    return 1920, 1170
 
 
-def broken_row(cols, y, tick, rng):
-    chars = []
-    tear = (y * 3 + tick // 2) % 19 == 0
-    for x in range(cols):
-        roll = rng.random()
-        column = (x * 17 + y * 3) % 53
-        if tear and 2 < x < cols - 2:
-            chars.append(" ")
-        elif column == 0 and roll < 0.7:
-            chars.append("│")
-        elif roll < 0.012:
-            chars.append("█")
-        elif roll < 0.03:
-            chars.append(rng.choice("▓▒░"))
-        elif roll < 0.055:
-            chars.append(rng.choice("·+"))
-        else:
-            chars.append(" ")
-    if (y + tick // 4) % 9 == 0:
-        shift = 1 + (y + tick) % 7
-        chars = chars[shift:] + [" "] * shift
-    # A missing chunk, so the field looks cracked rather than textured.
-    if rng.random() < 0.55:
-        hole = rng.randint(0, max(1, cols - 8))
-        width = rng.randint(3, 10)
-        for i in range(hole, min(cols, hole + width)):
-            chars[i] = " "
-    return chars
+def grid_code(r, c):
+    return CODES[(r * 5 + c * 3 + 2) % len(CODES)]
 
 
-def drips(cols, rows, tick):
-    marks = {}
-    for i in range(8):
-        x = (i * 29 + 7) % max(1, cols)
-        head = (tick + i * 11) % (rows + 10)
-        length = 5 + (i % 6)
-        for k in range(length):
-            y = head - k
-            if 0 <= y < rows:
-                marks[(x, y)] = k
-    return marks
+def build_grid():
+    cells = [[grid_code(r, c) for c in range(COLS)] for r in range(ROWS)]
+    for daemon in DAEMONS:
+        for (r, c), code in zip(daemon["path"], daemon["seq"]):
+            cells[r][c] = code
+    return cells
 
 
-def apply_drip(chars, y, drip, tick):
-    for x, ch in enumerate(chars):
-        depth = drip.get((x, y))
-        if depth is None:
-            continue
-        if depth == 0 and tick % 5 == 0:
-            chars[x] = "●"
-        elif depth < 2:
-            chars[x] = "█"
-        else:
-            chars[x] = "▓" if ch == " " else ch
-    return chars
+GRID = build_grid()
 
 
-def flatline(cols, tick):
-    line = ["─"] * cols
-    # One dying twitch, then the trace goes flat again.
-    beat = tick % 34
-    if beat < 7:
-        spike = "▁▂▄█▇▂▁"
-        start = (cols * 2) // 3
-        for i, glyph in enumerate(spike):
-            at = start + i
-            if at < cols:
-                line[at] = glyph
-    return "".join(line)
+class Draw:
+    def __init__(self, width, height):
+        self.width = width
+        self.height = height
+        self.s = min(width / 1920, height / 1200)
+        self.args = [
+            "magick",
+            "-size",
+            f"{width}x{height}",
+            "xc:#000000",
+            "-gravity",
+            "NorthWest",
+            "-depth",
+            "8",
+        ]
+
+    def px(self, value):
+        return max(1, int(round(value * self.s)))
+
+    def fill(self, color):
+        self.args.extend(["-fill", color, "-stroke", "none"])
+
+    def pen(self, color, width):
+        self.args.extend(["-fill", "none", "-stroke", color, "-strokewidth", str(self.px(width))])
+
+    def font(self, path, size):
+        self.args.extend(["-font", path, "-pointsize", str(self.px(size)), "-stroke", "none"])
+
+    def text(self, x, y, message, color):
+        self.fill(color)
+        self.args.extend(["-annotate", f"+{int(x)}+{int(y)}", message])
+
+    def rect(self, x0, y0, x1, y1, color):
+        self.fill(color)
+        self.args.extend(["-draw", f"rectangle {int(x0)},{int(y0)} {int(x1)},{int(y1)}"])
+
+    def line(self, x0, y0, x1, y1, color, width):
+        self.pen(color, width)
+        self.args.extend(["-draw", f"line {int(x0)},{int(y0)} {int(x1)},{int(y1)}"])
+
+    def poly(self, points, color, width):
+        self.pen(color, width)
+        body = " ".join(f"{int(x)},{int(y)}" for x, y in points)
+        self.args.extend(["-draw", f"polyline {body}"])
+
+    def run(self, sixel):
+        if not sixel:
+            proc = subprocess.run(self.args + ["png:-"], capture_output=True)
+            if proc.returncode != 0:
+                raise RuntimeError(proc.stderr.decode("utf-8", "replace")[:400])
+            return proc.stdout
+        proc = subprocess.run(self.args + ["rgb:-"], capture_output=True)
+        if proc.returncode != 0 or len(proc.stdout) != self.width * self.height * 3:
+            raise RuntimeError(proc.stderr.decode("utf-8", "replace")[:400] or "short frame")
+        enc = subprocess.run(
+            [ENCODER, str(self.width), str(self.height)],
+            input=proc.stdout,
+            capture_output=True,
+        )
+        if enc.returncode != 0 or not enc.stdout.startswith(b"\033P"):
+            raise RuntimeError(enc.stderr.decode("utf-8", "replace")[:200] or "sixel encoder failed")
+        return enc.stdout
 
 
-def center_glyph(glyph, cols, shift):
-    text = glyph
-    if shift:
-        if shift > 0:
-            text = (" " * shift) + glyph
-        else:
-            text = glyph[-shift:]
-    return clip(text.center(cols), cols)
-
-
-def frame(tick):
-    cols, rows = size()
-    rng = random.Random(tick * 17 + 3)
-    color = glow_color(tick)
-    ghost = DEEP if color is not WHITE else BLOOD
-    lines = []
-
-    brand = " ARASAKA   //   COUNTER-INTEL   //   SUBJECT FLATLINED   //   EEG NULL "
-    lines.append(paint(clip(brand, cols), GOLD if tick % 26 == 0 else HOT))
-    rule = "─" * cols
-    # Break the rule so it is not one clean stroke.
-    cut = (tick * 5) % max(1, cols - 12)
-    rule = rule[:cut] + " " + rule[cut + 1 :]
-    lines.append(paint(clip(rule, cols), DEEP))
-
-    body_rows = max(0, rows - 8)
-    drip = drips(cols, rows, tick // 2)
-    field = []
-    for y in range(body_rows):
-        chars = broken_row(cols, y, tick, rng)
-        apply_drip(chars, y, drip, tick)
-        if tick % 11 == 0 and y % 6 == (tick // 2) % 6:
-            burst = rng.randint(0, max(1, cols // 3))
-            for i in range(burst, min(cols, burst + rng.randint(4, 14))):
-                chars[i] = rng.choice("▓▒░")
-        field.append("".join(chars))
-
-    title = big_word("ARASAKA")
-    dead = big_word("FLATLINED")
-    block = len(title) + 2 + len(dead)
-    top = max(1, (body_rows - block) // 2)
-
-    def tear(row):
-        # The word sits still, then one band rips sideways.
-        if tick % 7 != 0 and tick % 11 != 4:
-            return 0
-        if row % 3 != (tick // 2) % 3:
-            return 0
-        return ((tick // 3) % 7) - 3
-
-    for i, glyph in enumerate(title):
-        slot = top + i
-        if 0 <= slot < len(field):
-            field[slot] = center_glyph(glyph, cols, tear(i))
-    for i, glyph in enumerate(dead):
-        slot = top + len(title) + 2 + i
-        if 0 <= slot < len(field):
-            field[slot] = center_glyph(glyph, cols, tear(i + 4))
-
-    # A dim copy one row down sells the glow. It is the same dead word, bleeding.
-    for i, glyph in enumerate(dead):
-        slot = top + len(title) + 3 + i
-        if 0 <= slot < len(field) and tick % 26 != 0:
-            ghost_row = center_glyph(glyph, cols, 1)
-            # Only fill spaces, so the bright word stays on top where they overlap.
-            current = list(field[slot])
-            for x, ch in enumerate(ghost_row):
-                if ch != " " and current[x] == " ":
-                    current[x] = ch
-            field[slot] = "".join(current)
-
-    for y, raw in enumerate(field):
-        row_color = color if top <= y < top + block + 1 else DEEP
-        if tick % 26 == 0 and top <= y < top + len(title):
-            row_color = WHITE
-        if y % 13 == tick % 13 and row_color is DEEP:
-            row_color = ASH
-        lines.append(paint(clip(raw, cols), row_color))
-
-    while len(lines) < rows - 6:
-        lines.append(paint(" " * cols, DEEP))
-    lines = lines[: rows - 6]
-
-    trace_color = HOT if tick % 34 < 7 else BLOOD
-    lines.append(paint(clip(flatline(cols, tick), cols), trace_color))
-    lines.append(paint(clip(rule, cols), DEEP))
-
-    dead_log = [
-        "CARDIAC OUTPUT  00",
-        "BLOOD OX        00",
-        "NEURAL LATTICE  DARK",
-        "SOULKILLER      NO PATTERN",
-        "RELIC           OFFLINE",
-        "TIME OF DEATH   LOCKED",
+def frame_path(d, x, y, w, h):
+    # One chamfered rule. The bottom run leaves a single gap for the version.
+    cut_a = d.px(34)
+    cut_b = d.px(18)
+    cut_c = d.px(22)
+    cut_d = d.px(16)
+    gap = d.px(70)
+    mid = x + w // 2
+    return [
+        (x + cut_a, y),
+        (x + w - cut_b, y),
+        (x + w, y + cut_b),
+        (x + w, y + h - cut_c),
+        (x + w - cut_c, y + h),
+        (mid + gap // 2, y + h),
+    ], [
+        (mid - gap // 2, y + h),
+        (x + cut_d, y + h),
+        (x, y + h - cut_d),
+        (x, y + cut_a),
+        (x + cut_a, y),
     ]
-    start = (tick // 7) % len(dead_log)
-    for i in range(4):
-        msg = "> " + dead_log[(start + i) % len(dead_log)]
-        if tick % 17 == i:
-            msg = "> " + "".join(rng.choice("█▓▒/\\") for _ in range(rng.randint(8, 18)))
-        ink = HOT if i == 3 else ASH
-        lines.append(paint(clip(msg, cols), ink))
-
-    while len(lines) < rows:
-        lines.append(paint(" " * cols, DEEP))
-    return "\033[H" + "\n".join(lines[:rows]) + frame_overlay(cols, rows, tick)
 
 
-def mix(seed, salt):
-    n = (seed ^ ((salt + 1) * 0x9E3779B1)) & 0xFFFFFFFF
-    n = (n * 0x85EBCA6B) & 0xFFFFFFFF
-    n = (n ^ (n >> 13)) & 0xFFFFFFFF
-    return (n % 10000) / 10000.0
+def render(width, height, tick, sixel=True):
+    d = Draw(width, height)
+    s = d.s
+    daemon_i = (tick // 28) % len(DAEMONS)
+    daemon = DAEMONS[daemon_i]
+    step = tick % 28
+    # Hold on the last cell, then move to the next daemon.
+    cursor = min(step // 4, len(daemon["path"]) - 1)
+    done = step >= 4 * len(daemon["path"]) + 6
+    glitch = tick % 22 == 0
 
+    margin = d.px(46)
+    outer = frame_path(d, margin, d.px(28), width - margin * 2, height - d.px(56))
+    d.poly(outer[0], YELLOW, 2)
+    d.poly(outer[1], YELLOW, 2)
+    # Cyan tick on the top-left chamfer, the same accent as the window frames.
+    d.line(margin + d.px(8), d.px(78), margin + d.px(8), d.px(96), CYAN, 3)
 
-def frame_overlay(cols, rows, tick):
-    # Same rules as the window frames, in cells: uneven cuts, a gap in each
-    # run, and one half stepped inward. Yellow stroke, cyan tick.
-    seed = 4
-    step = (tick // 22) % 8
-    slide = int((step - 3.5) * 1.4)
-    cuts = [
-        min(6, 2 + int(mix(seed, 1) * 4)),
-        min(5, 1 + int(mix(seed, 2) * 3)),
-        min(6, 3 + int(mix(seed, 3) * 3)),
-        min(6, 2 + int(mix(seed, 4) * 4)),
-    ]
-    cells = {}
+    title_y = d.px(108)
+    shift = d.px(10) if glitch else 0
+    d.font(SANS, 42)
+    d.text(d.px(86) + shift, title_y, "BREACH PROTOCOL", YELLOW)
+    d.font(SANS_REG, 16)
+    d.text(d.px(88), title_y + d.px(46), "NETWATCH    //    ACCESS POINT", YELLOW_DIM)
 
-    def put(x, y, ch, color=YELLOW):
-        if 0 <= x < cols and 0 <= y < rows:
-            cells[(int(x), int(y))] = (ch, color)
+    trace = int(tick * 0.45)
+    trace_color = RED if trace % 40 > 32 else CYAN
+    d.font(MONO, 18)
+    d.text(width - d.px(300), title_y - d.px(4), f"TRACE   {trace // 60:02d}:{trace % 60:02d}", trace_color)
 
-    def run(x0, y0, x1, y1, salt, inward):
-        dx = x1 - x0
-        dy = y1 - y0
-        length = abs(dx) + abs(dy)
-        if length < 8:
-            return
-        gap = 4 + int(mix(seed, salt + 2) * 6)
-        center = int(length * (0.22 + mix(seed, salt + 3) * 0.52)) + slide
-        g0 = max(2, center - gap // 2)
-        g1 = min(length - 2, center + gap // 2)
-        sx = 0 if dx == 0 else (1 if dx > 0 else -1)
-        sy = 0 if dy == 0 else (1 if dy > 0 else -1)
-        nx, ny = inward
-        glyph = "─" if sy == 0 else "│"
-        for i in range(2, length - 2):
-            if g0 <= i <= g1:
-                continue
-            shift = 0 if i < center else 1
-            put(x0 + sx * i + nx * shift, y0 + sy * i + ny * shift, glyph)
+    d.line(d.px(86), title_y + d.px(68), width - d.px(86), title_y + d.px(68), YELLOW, 1)
 
-    def chamfer(x0, y0, x1, y1, salt, ch):
-        steps = max(abs(x1 - x0), abs(y1 - y0), 1)
-        broken = mix(seed, salt) > 0.62
-        for i in range(steps + 1):
-            if broken and steps * 0.42 < i < steps * 0.68:
-                continue
-            t = i / steps
-            put(round(x0 + (x1 - x0) * t), round(y0 + (y1 - y0) * t), ch)
+    # Sequences. Completed rows stay readable and quiet. The active row is the bright one.
+    d.font(SANS, 15)
+    d.text(d.px(88), d.px(196), "SEQUENCE", YELLOW)
+    for i, item in enumerate(DAEMONS):
+        y = d.px(250) + i * d.px(78)
+        active = i == daemon_i and not done
+        finished = i < daemon_i or (i == daemon_i and done)
+        if active:
+            d.rect(d.px(84), y - d.px(28), d.px(520), y + d.px(18), "#120F00")
+            d.rect(d.px(84), y - d.px(28), d.px(88), y + d.px(18), CYAN)
+        name_color = YELLOW if active else (YELLOW_SOFT if finished else YELLOW_DIM)
+        d.font(MONO, 16)
+        d.text(d.px(104), y, "  ".join(item["seq"]), name_color if active else YELLOW_DIM)
+        d.font(SANS, 20)
+        d.text(d.px(104), y + d.px(28), item["name"], name_color)
+        if finished:
+            d.line(d.px(430), y - d.px(6), d.px(490), y - d.px(6), CYAN, 2)
 
-    x, y, w, h = 0, 0, cols - 1, rows - 1
-    run(x + cuts[0], y, x + w - cuts[1], y, 10, (0, 1))
-    run(x + w, y + cuts[1], x + w, y + h - cuts[2], 20, (-1, 0))
-    run(x + w - cuts[2], y + h, x + cuts[3], y + h, 30, (0, -1))
-    run(x, y + h - cuts[3], x, y + cuts[0], 40, (1, 0))
-    chamfer(x + cuts[0], y, x, y + cuts[0], 51, "\\")
-    chamfer(x + w - cuts[1], y, x + w, y + cuts[1], 52, "/")
-    chamfer(x + w, y + h - cuts[2], x + w - cuts[2], y + h, 53, "\\")
-    chamfer(x, y + h - cuts[3], x + cuts[3], y + h, 54, "/")
-    longest = max(range(4), key=lambda i: cuts[i])
-    if longest == 0:
-        put(x + 1, y + cuts[0] + 1, "│", CYAN)
-        put(x + 1, y + cuts[0] + 2, "│", CYAN)
-    elif longest == 1:
-        put(x + w - 1, y + cuts[1] + 1, "│", CYAN)
-        put(x + w - 1, y + cuts[1] + 2, "│", CYAN)
-    elif longest == 2:
-        put(x + w - cuts[2] - 2, y + h - 1, "─", CYAN)
-        put(x + w - cuts[2] - 1, y + h - 1, "─", CYAN)
-    else:
-        put(x + cuts[3] + 1, y + h - 1, "─", CYAN)
-        put(x + cuts[3] + 2, y + h - 1, "─", CYAN)
-    return "".join(
-        f"\033[{cy + 1};{cx + 1}H{color}{ch}{RESET}"
-        for (cx, cy), (ch, color) in cells.items()
+    # Breach grid.
+    gx = d.px(600)
+    gy = d.px(230)
+    cw = d.px(148)
+    ch = max(d.px(90), (height - d.px(170) - gy) // ROWS)
+    lit = set(daemon["path"][: cursor + (0 if done else 1)])
+    current = None if done else daemon["path"][cursor]
+    for r in range(ROWS):
+        for c in range(COLS):
+            x = gx + c * cw
+            y = gy + r * ch
+            code = GRID[r][c]
+            on_path = (r, c) in lit
+            here = (r, c) == current
+            if on_path:
+                d.rect(x, y, x + cw - d.px(18), y + ch - d.px(24), "#141000")
+            if here:
+                d.line(x, y + ch - d.px(30), x + cw - d.px(18), y + ch - d.px(30), CYAN, 2)
+            d.font(MONO, 32)
+            color = YELLOW if on_path else YELLOW_DIM
+            if here and (tick % 2 == 0):
+                color = CYAN
+            d.text(x + d.px(34), y + (ch // 2) + d.px(10), code, color)
+
+    # Faint rails so the matrix reads as a board, not scattered type.
+    for c in range(COLS + 1):
+        x = gx + c * cw - d.px(10)
+        d.line(x, gy - d.px(16), x, gy + ROWS * ch - d.px(20), GRID_LINE, 1)
+    for r in range(ROWS + 1):
+        y = gy + r * ch - d.px(16)
+        d.line(gx - d.px(8), y, gx + COLS * cw - d.px(16), y, GRID_LINE, 1)
+
+    # Buffer and ice, on the right. Short, and not a second picture.
+    rx = gx + COLS * cw + d.px(36)
+    d.font(SANS, 15)
+    d.text(rx, d.px(196), "BUFFER", YELLOW)
+    pips = 8
+    filled = min(pips, daemon["cost"] + (0 if done else cursor))
+    for i in range(pips):
+        x = rx + (i % 4) * d.px(36)
+        y = d.px(220) + (i // 4) * d.px(28)
+        if i < filled:
+            d.rect(x, y, x + d.px(24), y + d.px(14), YELLOW)
+        else:
+            d.line(x, y, x + d.px(24), y, YELLOW_DIM, 1)
+            d.line(x, y + d.px(14), x + d.px(24), y + d.px(14), YELLOW_DIM, 1)
+    d.font(MONO, 16)
+    d.text(rx, d.px(300), f"RAM   {daemon['cost']:02d}", CYAN if not done else YELLOW_DIM)
+
+    d.font(SANS, 15)
+    d.text(rx, d.px(370), "ICE", YELLOW)
+    d.font(SANS, 22)
+    d.text(rx, d.px(408), "BLACKWALL", YELLOW_SOFT)
+    d.font(MONO, 16)
+    d.text(rx, d.px(440), "LAYER   03", YELLOW_DIM)
+    d.font(SANS, 15)
+    d.text(rx, d.px(510), "UPLINK", YELLOW)
+    d.font(SANS, 22)
+    d.text(rx, d.px(548), "NIGHT CITY", YELLOW_SOFT)
+    d.font(MONO, 14)
+    d.text(rx, d.px(584), "v.47", YELLOW_DIM)
+
+    # Upload rule along the bottom.
+    by = height - d.px(70)
+    d.font(SANS, 16)
+    label = "UPLOADED" if done else "UPLOADING"
+    d.text(d.px(88), by - d.px(28), f"{label}    {daemon['name']}", CYAN if not done else YELLOW_SOFT)
+    span = width - d.px(176)
+    progress = 1.0 if done else (cursor + (0.5 if tick % 2 == 0 else 0.15)) / len(daemon["path"])
+    progress = max(0.04, min(1.0, progress))
+    d.line(d.px(88), by, d.px(88) + span, by, "#241F08", 4)
+    d.line(d.px(88), by, d.px(88) + int(span * progress), by, YELLOW, 4)
+    d.rect(
+        d.px(88) + int(span * progress) - d.px(2),
+        by - d.px(6),
+        d.px(88) + int(span * progress) + d.px(2),
+        by + d.px(6),
+        CYAN,
     )
+
+    if glitch:
+        band = d.px(210) + (tick * 17 % (ROWS * 118)) * s
+        d.line(d.px(70), band, width - d.px(70), band, CYAN, 2)
+
+    return d.run(sixel)
 
 
 def hypr_cursor(hidden):
@@ -361,11 +336,20 @@ def screensaver_focused():
 
 
 def main():
+    png_path = os.environ.get("CP2077_SAVER_PNG")
+    if png_path:
+        width, height = pixels()
+        tick = int(os.environ.get("CP2077_SAVER_TICK", "6"))
+        data = render(width, height, tick, sixel=False)
+        with open(png_path, "wb") as handle:
+            handle.write(data)
+        return
+
     once = os.environ.get("CP2077_SAVER_FRAMES")
     frames = int(once) if once else 0
     hypr_cursor(True)
-    sys.stdout.write("\033]11;rgb:00/00/00\007\033[2J\033[?25l")
-    sys.stdout.flush()
+    sys.stdout.buffer.write(b"\033]11;rgb:00/00/00\007\033[2J\033[H\033[?25l")
+    sys.stdout.buffer.flush()
     fd = sys.stdin.fileno()
     old = None
     if sys.stdin.isatty() and frames == 0:
@@ -373,8 +357,8 @@ def main():
         tty.setcbreak(fd)
 
     def finish(*_args):
-        sys.stdout.write("\033[?25h" + RESET + "\033[2J\033[H")
-        sys.stdout.flush()
+        sys.stdout.buffer.write(b"\033[?25h\033[0m\033[2J\033[H")
+        sys.stdout.buffer.flush()
         if old is not None:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         hypr_cursor(False)
@@ -383,27 +367,28 @@ def main():
     signal.signal(signal.SIGINT, finish)
     signal.signal(signal.SIGTERM, finish)
     signal.signal(signal.SIGHUP, finish)
+    width, height = pixels()
     started = time.monotonic()
     tick = 0
     try:
         while True:
-            sys.stdout.write(frame(tick))
-            sys.stdout.flush()
+            sys.stdout.buffer.write(b"\033[H" + render(width, height, tick, sixel=True))
+            sys.stdout.buffer.flush()
             tick += 1
             if frames and tick >= frames:
                 break
             if old is not None:
-                ready, _, _ = select.select([fd], [], [], 0.05)
+                ready, _, _ = select.select([fd], [], [], 0.02)
                 if ready:
                     break
             else:
-                time.sleep(0.05)
-            if frames == 0 and time.monotonic() - started > 1.2 and tick % 12 == 0:
+                time.sleep(0.02)
+            if frames == 0 and time.monotonic() - started > 1.2 and tick % 4 == 0:
                 if not screensaver_focused():
                     break
     finally:
-        sys.stdout.write("\033[?25h" + RESET)
-        sys.stdout.flush()
+        sys.stdout.buffer.write(b"\033[?25h\033[0m")
+        sys.stdout.buffer.flush()
         if old is not None:
             termios.tcsetattr(fd, termios.TCSADRAIN, old)
         hypr_cursor(False)

@@ -1,6 +1,6 @@
 # What this theme does
 
-Night City for Omarchy. Black field, yellow `FCEE0A`, cyan `00F0FF`, red `FE1038`, neon green `57 255 20`. The screen glitches and then goes clean. Each desk has a wallpaper. Windows, the lock page, the password plate, and the screensaver share one broken frame.
+Night City for Omarchy. Black field, yellow `FCEE0A`, cyan `00F0FF`, red `FE1038`, neon green `57 255 20`. The screen glitches and then goes clean. Each desk has a wallpaper. Window frames are broken yellow lines, and the focused window is the one that glows. The lock page, the password plate, and the fingerprint plate stay a 1 px stroke with no glow. The idle screen is a breach protocol.
 
 This file is the record of the behavior and the files. `NOTES.md` is the short list of things that must not be undone.
 
@@ -12,11 +12,13 @@ This file is the record of the behavior and the files. `NOTES.md` is the short l
 | `bin/cp2077-glitch` | `Super+Shift+Alt+G`. Turns the shader, damage tracking, and vfr together |
 | `bin/cp2077-keys` | Keyboard glitch. Brightness on most ASUS boards. Live color on the Flow Z13 GZ301ZE |
 | `bin/cp2077-walls` | One wallpaper per workspace, with a fallback |
-| `bin/omarchy-screensaver` | Bloody Arasaka flatline. Must stay executable |
+| `bin/omarchy-screensaver` | Breach-protocol idle screen. Must stay executable |
+| `bin/cp2077-sixel.c` | Fixed-palette sixel encoder. `install.sh` compiles it with gcc |
 | `extras/looknfeel.lua` | Shader on or off, then border 0, gaps 2 and 3, shadow off |
 | `theme/hyprland.lua` | Same border and gaps inside the theme itself |
 | `plugin/nightcity.frame/` | Click-through window frames. Id `nightcity.frame` |
-| `plugin/nightcity.lock/` | Lock page and password plate. The auth service is copied at install time |
+| `plugin/nightcity.lock/` | Lock page, password plate, fingerprint plate. The auth service is copied at install time |
+| `plugin/nightcity.polkit/` | Fingerprint prompt plate. The agent is copied at install time |
 | `install.sh` | The only install path |
 
 `install.sh` does not vendor the lock's `Service.qml`. It copies the copy that shipped with Omarchy, then replaces `LockView.qml`, `i18n/en.json`, and `manifest.json`.
@@ -35,6 +37,8 @@ Two things have to be true while it is on.
 The quiet windows are `consider(time, 8.0, 1.0, 1.7)` and `consider(time, 12.5, 0.30, 8.9)`. Leave them there.
 
 On a ROG Flow Z13 GZ301ZE the extra draw was about 1 W at 120 Hz on AC, and about 0.5–1 W at 60 Hz on battery. That is roughly 1–2% of a capped charge per hour. The cost is the full-screen redraw, not a second animation. Do not run a 60 fps overlay while the glitch is off.
+
+The frame lines step every 1100 ms. That is one overlay paint. It does not add a measurable amount on top of the shader redraw, so the lines stay in motion. Freezing them would not be what saves the battery. The key that turns the shader off is the battery switch.
 
 ## Keyboard
 
@@ -76,15 +80,19 @@ The paint:
 
 - Seed comes from the window address, so each window keeps its own cuts.
 - Each corner is cut by a different amount, clamped to 22% of the shorter side.
-- Each edge is two runs. The gap is about 12–34 px, and its center sits somewhere in the middle 22–74% of the span.
-- The two halves step inward by different amounts, 0 against 1 or 2, so they are not colinear.
+- Each edge is two runs. The gap is about 6–14 px, and it is capped at 18% of the span. Its center sits in the middle of the run.
+- The two halves step inward by 1 px, so they are not colinear. Every 1100 ms, while shell animations are enabled, one half's shift flips. The step runs 0 through 7.
 - A chamfer breaks into two pieces when its mix value is above 0.62.
-- Every 1100 ms, while shell animations are enabled, one edge's shift flips. The step runs 0 through 7.
-- The active window is `#FCEE0A`. The longest corner gets a short `#00F0FF` tick. Other windows use `rgba(252, 238, 10, 0.42)`.
+- Line caps are butt, so a gap stays open. A wide glow stack turns those gaps into black blocks, so the halo is one pass.
+- The focused window is thicker, yellow `#FCEE0A`, with one halo at `lineWidth + 7` and alpha 0.22, and a short `#00F0FF` tick on the longest corner. The tick is a 2.4 px core over an 8 px cyan wash at alpha 0.35.
+- Other windows are one thinner stroke, `rgba(252, 238, 10, 0.42)`, and they do not glow.
+- Thickness still varies per edge. A focused edge is about 1.7–4.5. An idle edge is about 1.1–1.8.
 
-Client coordinates from Hyprland are physical pixels. The layer's width and height are logical. Divide by the monitor scale, then inset 3 px. On a 1.5 scale panel, forgetting the divide paints the lines in the wrong place.
+Hyprland's `at` and `size` are already logical pixels, the same space as the layer. Do not divide by the monitor scale. Dividing paints the frame inside the window. Inset 3 px.
 
-`gaps_in` 2 and `gaps_out` 3 keep the yellow wallpaper from reading as a fat border. `border_size` 0 and the shadow off mean Hyprland is not drawing a second frame under the overlay. `resize_on_border` can stay on. Fullscreen mode 2 and above is skipped, and so are hidden, unmapped, and tiny windows. Pinned windows and the open special workspace are included.
+`gaps_in` 2 and `gaps_out` 3 keep the yellow wallpaper from reading as a fat border. `border_size` 0 and the shadow off mean Hyprland is not drawing a second frame under the overlay. A shadow on this layer paints full-height lines when a window sits off the monitor origin, so the shadow stays off. `resize_on_border` can stay on. Fullscreen mode 2 and above is skipped, and so are hidden and unmapped windows. A window with less than 48 px still on the monitor is skipped, so a scrolled-off neighbor does not paint a second line in the margin. Pinned windows and the open special workspace are included.
+
+Geometry is polled every 160 ms and also on open, close, move, float, fullscreen, workspace, and focus events. The poll does not repaint when the window list is unchanged. The 1100 ms step clears that signature, so the lines do move. `Canvas` `shadowBlur` does not show on this layer.
 
 The service is `keepLoaded`. Editing the QML logs a reload and keeps the old instance. `omarchy restart shell` loads the new one.
 
@@ -94,27 +102,40 @@ The service is `keepLoaded`. Editing the QML logs a reload and keeps the old ins
 
 The packaged lock under `/usr/share/omarchy/shell/plugins/lock` stays untouched. The theme clones it to `nightcity.lock` and replaces the view.
 
-The page frame and the password plate use the same `strokeFrame` rules as the windows. The page seed is 4. The password seed is 11. The page stroke is `#FCEE0A` with a `#00F0FF` tick, inset 16 px. The password plate is an uneven chamfered octagon, filled `rgba(8, 12, 18, 0.86)`, or `rgba(40, 8, 14, 0.88)` after a bad password. A bad password turns the stroke `#FE1038` and the tick yellow. The caption reads ACCESS. Above the field, the row is text only: NIGHT CITY in yellow, SEALED in cyan. Those three strings are `plugin/nightcity.lock/i18n/en.json`. The password field still focuses itself, drops auto-repeat, and reserves room for the fingerprint mark.
+The page frame, the password plate, and the fingerprint plate use a 1 px `strokeFrame`. No halo, and no thick core. The window glow does not belong on these plates. The page seed is 4. The password seed is 11. The fingerprint plate seed is 19. The page stroke is `#FCEE0A` with a `#00F0FF` tick, inset 16 px. The password plate is an uneven chamfered octagon, filled `rgba(8, 12, 18, 0.86)`, or `rgba(40, 8, 14, 0.88)` after a bad password. A bad password turns the stroke `#FE1038` and the tick yellow. The caption reads ACCESS.
+
+The page is not only that box. Inside the screen stroke, `paintPage` draws 1 px cyan corner marks, a cyan rule on each side of the title, and a footer rule with two cyan diamonds. Yellow rules disappear on a yellow wallpaper, so those marks are cyan. Above the field, the row is text: NIGHT CITY in yellow, SEALED in cyan. The fingerprint reader, when one is enrolled, is its own plate under the field. The caption is TOUCH. Those four strings are `plugin/nightcity.lock/i18n/en.json`. The password field still focuses itself and drops auto-repeat.
+
+The gaps still slide every 1100 ms while shell animations are on. That timer is the same small step as the windows.
 
 `install.sh` will not install this clone when another plugin id ending in `.lock` is already in `shell.json`. It will not remove that plugin. When it does install, it disables `omarchy.lock` and records `nightcity.lock` in `cloneSourceRestores`, which is how the shell can hand the lock back later.
 
 The shell has to restart once so this clone is the first lock handler. Preview with `omarchy-shell lock preview`, then `omarchy-shell lock hidePreview`. Do not lock the session just to look at it.
 
+## Polkit
+
+The packaged agent under `/usr/share/omarchy/shell/plugins/polkit` stays untouched. The theme clones it to `nightcity.polkit` and replaces `PolkitAgent.qml`, `i18n/en.json`, and `manifest.json`.
+
+Password prompts stay the wide field. A fingerprint prompt is a square plate with the same 1 px broken stroke as the lock, seed 19, caption TOUCH. The plate does not glow. Its 1100 ms step runs only while that fingerprint page is showing.
+
+`install.sh` skips the clone when another plugin id ending in `.polkit` is already enabled. It will not remove that plugin. When it does install, it disables `omarchy.polkit` and records `nightcity.polkit` in `cloneSourceRestores`. Two agents must not both be enabled.
+
 ## Screensaver
 
 Omarchy launches `omarchy-screensaver` in foot, class `org.omarchy.screensaver`. Putting the script in `~/.config/omarchy/bin` and putting that directory first on PATH is what shadows the logo saver. `extras/hyprland.lua` does the PATH part. If the script is not executable, Hyprland falls through to the logo.
 
-The picture stays dead. Torn dark-red field, eight blood drips, a flatline that twitches and goes flat, and the words ARASAKA and FLATLINED in a 6-by-6 cell font. The words sit still except when the tick is a rip frame, and then only every third row jumps. A white flash is about one frame in 26, not a strobe. The log stays dead: cardiac output 00, blood ox 00, neural lattice dark, soulkiller with no pattern, relic offline, time of death locked. About every 17 ticks one of those lines turns to junk.
+The picture is a breach screen, drawn with ImageMagick and a real font, then encoded to sixel. Title BREACH PROTOCOL. A 6 by 5 code grid. Four daemon sequences, one at a time: SYNAPSE BURN, WEAPON GLITCH, REBOOT OPTICS, SONIC SHOCK. Buffer pips, an upload bar, and a right-hand column for RAM, ICE, and the uplink. Colors are yellow `#FCEE0A`, dim yellow `#6E6412`, cyan `#00F0FF`, and red `#FE1038`. One tick in 22 draws a single cyan tear. It is not a character-cell picture and not a flatline.
 
-`frame_overlay` then paints the same broken frame in character cells. Cuts are a few cells, the gap is 4–8 cells, one half of each run steps inward, the stroke is yellow, and the longest corner gets a cyan tick. It is drawn after the blood picture so it wins.
+`bin/cp2077-sixel.c` is the encoder. ImageMagick's own sixel quantizer turns this yellow black, and `img2sixel` is not used. The header is `ESC P 0 ; 2 ; 0 q`. P2 = 2 paints palette color 0 as opaque black. P2 = 1 leaves black transparent, and the desktop frames show through. `install.sh` compiles it with `gcc -O2` to `cp2077-sixel` beside the script. The script finds that binary next to itself.
 
 Leaving it:
 
-- Any key exits. The terminal is in cbreak and polled every 50 ms.
+- Any key exits. The terminal is in cbreak.
 - About 1.2 s after start, every 12th tick exits if the active window is no longer `org.omarchy.screensaver`.
 - SIGINT, SIGTERM, and SIGHUP call the same cleanup.
-- Cleanup shows the terminal cursor, clears the screen, and sets Hyprland `cursor:invisible` to false. The cursor is hidden only while the saver is up.
-- `CP2077_SAVER_FRAMES` renders that many frames and exits, for a headless check. It does not grab the tty.
+- Cleanup sets Hyprland `cursor:invisible` to false. The cursor is hidden only while the saver is up. The same restore runs if the process is interrupted.
+- Do not `pkill -f` the script path. That can hit the launcher pipe. Move focus to another window and let the script exit.
+- `CP2077_SAVER_FRAMES` renders that many frames and exits, for a headless check. `CP2077_SAVER_PNG` writes one PNG and returns. Neither grabs the tty.
 
 The stock `branding/screensaver.txt` is not used. Idle timeouts are the user's. This theme does not write them.
 
@@ -130,8 +151,9 @@ What the script changes:
 
 - Replaces `~/.config/omarchy/themes/cyberpunk-2077` with a copy that has no `.git`.
 - Copies `bin/`, the shader, the post-boot hook, the Night City icon theme, `nightcity.workspaces`, and `nightcity.frame`.
-- Copies the screensaver into `~/.config/omarchy/bin`.
+- Copies the screensaver into `~/.config/omarchy/bin` and compiles `cp2077-sixel` there with `gcc -O2`.
 - Installs the lock clone unless another lock plugin is already enabled.
+- Installs the polkit clone unless another polkit plugin is already enabled.
 - Replaces the marked Night City blocks in looknfeel, hyprland, bindings, and autostart.
 - Sets the bar widget id to `nightcity.workspaces` and the clock to `NC`, without changing idle times.
 - Adds the frame plugin id when no `*.frame` plugin is listed.
@@ -144,10 +166,11 @@ What it does not change:
 - It does not download wallpapers.
 - It does not read hardware serials.
 - It does not write keyboard color into flash.
-- It does not remove a lock or frame plugin you already enabled.
+- It does not remove a lock, frame, or polkit plugin you already enabled.
 - It does not change idle or lock timeouts.
+- It does not commit the compiled `cp2077-sixel` binary.
 
-A second run refreshes the theme's own files and the marked blocks. It still will not replace your lock or frame plugin.
+A second run refreshes the theme's own files and the marked blocks. It still will not replace your lock, frame, or polkit plugin.
 
 ## Left out on purpose
 
@@ -155,4 +178,5 @@ A second run refreshes the theme's own files and the marked blocks. It still wil
 - A serial, a board serial, a product UUID, a hostname, a home directory, an email address, a MAC, a machine id, or a copied Aura object path.
 - Per-key USB color writes. This keyboard cannot do them.
 - A forced monitor name or refresh rate.
-- A second copy of the Omarchy lock service inside git.
+- A second copy of the Omarchy lock service or polkit agent inside git. The clones overlay the view. The service files stay the ones that shipped with Omarchy.
+- The compiled `cp2077-sixel` binary. The C source is what the repo keeps.

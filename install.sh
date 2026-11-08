@@ -63,14 +63,54 @@ PY
   cp -a "$SRC/plugin/nightcity.lock/manifest.json" "$dst/manifest.json"
 }
 
+install_nightcity_polkit() {
+  local stock="/usr/share/omarchy/shell/plugins/polkit"
+  local dst="$CFG/omarchy/plugins/nightcity.polkit"
+  local choice=install
+  if [[ ! -f $stock/PolkitAgent.qml ]]; then
+    echo "Polkit clone skipped. Omarchy's polkit plugin was not on this machine."
+    return 0
+  fi
+  if [[ -f $CFG/omarchy/shell.json ]]; then
+    choice=$(python3 - "$CFG/omarchy/shell.json" << 'PY'
+import json, sys
+data = json.loads(open(sys.argv[1], encoding="utf-8").read())
+ids = []
+for entry in data.get("plugins") or []:
+    if isinstance(entry, dict):
+        ids.append(str(entry.get("id") or ""))
+    elif isinstance(entry, str):
+        ids.append(entry)
+print("skip" if any(i.endswith(".polkit") and i != "nightcity.polkit" for i in ids) else "install")
+PY
+)
+  fi
+  if [[ $choice == skip ]]; then
+    echo "Polkit clone skipped. Another polkit plugin is already enabled."
+    return 0
+  fi
+  rm -rf "$dst"
+  cp -a "$stock" "$dst"
+  cp -a "$SRC/plugin/nightcity.polkit/PolkitAgent.qml" "$dst/PolkitAgent.qml"
+  mkdir -p "$dst/i18n"
+  cp -a "$SRC/plugin/nightcity.polkit/i18n/en.json" "$dst/i18n/en.json"
+  cp -a "$SRC/plugin/nightcity.polkit/manifest.json" "$dst/manifest.json"
+}
+
 mkdir -p "$CFG/omarchy/themes" "$CFG/omarchy/bin" "$CFG/omarchy/plugins" \
   "$CFG/omarchy/extensions" "$CFG/omarchy/hooks/post-boot.d" \
   "$HYPR/shaders" "$HOME_DIR/.local/share/icons"
 
 rm -rf "$THEME_DST"
 cp -a "$SRC/theme" "$THEME_DST"
-chmod +x "$SRC/bin/"* "$SRC/hooks/"*
+chmod +x "$SRC/bin/omarchy-screensaver" "$SRC/bin/cp2077-glitch" "$SRC/bin/cp2077-keys" "$SRC/bin/cp2077-walls" "$SRC/hooks/"*
 cp -a "$SRC/bin/." "$CFG/omarchy/bin/"
+if command -v gcc >/dev/null; then
+  gcc -O2 -o "$CFG/omarchy/bin/cp2077-sixel" "$SRC/bin/cp2077-sixel.c"
+  chmod +x "$CFG/omarchy/bin/cp2077-sixel"
+else
+  echo "Could not build cp2077-sixel. The breach saver needs gcc."
+fi
 cp -a "$SRC/shader/cp2077.frag" "$HYPR/shaders/cp2077.frag"
 cp -a "$SRC/hooks/cp2077-jacked-in.sh" "$CFG/omarchy/hooks/post-boot.d/cp2077-jacked-in.sh"
 rm -rf "$CFG/omarchy/plugins/nightcity.workspaces"
@@ -78,6 +118,7 @@ cp -a "$SRC/plugin/nightcity.workspaces" "$CFG/omarchy/plugins/nightcity.workspa
 rm -rf "$CFG/omarchy/plugins/nightcity.frame"
 cp -a "$SRC/plugin/nightcity.frame" "$CFG/omarchy/plugins/nightcity.frame"
 install_nightcity_lock
+install_nightcity_polkit
 rm -rf "$HOME_DIR/.local/share/icons/Nightcity"
 cp -a "$SRC/icons/Nightcity" "$HOME_DIR/.local/share/icons/Nightcity"
 rm -f "$HOME_DIR/.local/share/icons/Nightcity/icon-theme.cache"
@@ -187,6 +228,27 @@ if "nightcity.lock" in ids:
         restores.append("nightcity.lock")
     data["cloneSourceRestores"] = restores
 
+polkit_dir = Path.home() / ".config/omarchy/plugins/nightcity.polkit"
+other_polkit = any(plugin_id.endswith(".polkit") and plugin_id != "nightcity.polkit" for plugin_id in ids)
+if polkit_dir.is_dir() and not other_polkit and "nightcity.polkit" not in ids:
+    plugins.append({"id": "nightcity.polkit"})
+    ids.append("nightcity.polkit")
+
+# Two polkit agents must not both stay enabled.
+if "nightcity.polkit" in ids:
+    disabled = data.get("disabledPlugins")
+    if not isinstance(disabled, list):
+        disabled = []
+    if "omarchy.polkit" not in disabled:
+        disabled.append("omarchy.polkit")
+    data["disabledPlugins"] = disabled
+    restores = data.get("cloneSourceRestores")
+    if not isinstance(restores, list):
+        restores = []
+    if "nightcity.polkit" not in restores:
+        restores.append("nightcity.polkit")
+    data["cloneSourceRestores"] = restores
+
 bak = path.with_name("shell.json.nightcity-bak")
 if not bak.exists():
     bak.write_text(path.read_text())
@@ -215,9 +277,10 @@ Jacked in.
   Glitch  Super+Shift+Alt+G
   Walls   they follow the desk
   Frames  nightcity.frame
-  Saver   Arasaka flatline
+  Saver   breach protocol
 
 The glitch redraws every frame. Small battery cost. The key turns it off.
 The lock clone is installed only when no other lock plugin is already enabled.
+The polkit clone is installed only when no other polkit plugin is already enabled.
 See NOTES.md before changing the shader, the frames, or the lock.
 EOF

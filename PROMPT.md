@@ -17,16 +17,23 @@ Do not change the monitor refresh rate unless I ask.
 Do not install extras/monitors-60hz.lua unless I ask.
 The glitch key is Super+Shift+Alt+G. Leave it.
 
-The frame plugin id is nightcity.frame. Hyprland's border stays 0.
-Do not enable a second frame plugin. A QML change needs
-`omarchy restart shell` because the service stays loaded.
+The frame plugin id is nightcity.frame. Hyprland's border stays 0 and
+the shadow stays off. Hyprland at/size are already logical pixels.
+Do not divide them by monitor.scale. Only the focused window glows,
+and that glow is one halo pass. Do not enable a second frame plugin.
+A QML change needs `omarchy restart shell` because the service stays loaded.
 
-The lock clone is nightcity.lock. Do not edit the packaged lock under
-/usr/share. If another lock plugin is already enabled, leave it.
-Do not lock the session to preview. Use `omarchy-shell lock preview`.
+The lock clone is nightcity.lock. The polkit clone is nightcity.polkit.
+Do not edit the packaged copies under /usr/share. If another lock or
+polkit plugin is already enabled, leave it. Do not enable both agents.
+Lock, password, fingerprint, and polkit plates stay a 1 px stroke with
+no glow. Do not lock the session to preview. Use `omarchy-shell lock preview`.
 
-bin/omarchy-screensaver must stay executable. Any key or a lost window
-exits it, and it must restore cursor:invisible to false.
+bin/omarchy-screensaver must stay executable. install.sh builds
+cp2077-sixel beside it with gcc. Do not commit that binary. The sixel
+header keeps P2 = 2 so black stays opaque. Any key or a lost window
+exits the saver, and it must restore cursor:invisible to false.
+Do not pkill -f the screensaver path.
 
 If I also want the keyboard to glitch, read KEYBOARD.md first.
 Detect the keyboard. Do not reuse the ASUS script on other hardware.

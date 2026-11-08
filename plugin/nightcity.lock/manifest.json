@@ -4,7 +4,7 @@
   "name": "Night City Lock",
   "version": "1.0.0",
   "author": "ha-anzu",
-  "description": "Omarchy lock screen with the same broken yellow frame as the windows.",
+  "description": "Lock page and password plate. A 1px broken frame, with no glow.",
   "omarchy": {
     "capabilities": [
       "authentication"

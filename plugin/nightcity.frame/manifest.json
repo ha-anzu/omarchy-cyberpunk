@@ -4,7 +4,7 @@
   "name": "Night City Frames",
   "version": "1.0.0",
   "author": "ha-anzu",
-  "description": "Thin broken chamfer frames drawn around windows.",
+  "description": "Broken chamfer frames. The focused window is the one that glows.",
   "kinds": [
     "service"
   ],

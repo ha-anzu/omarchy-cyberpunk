@@ -27,9 +27,9 @@ Item {
   readonly property int fieldFontSize: Math.round(Style.font.heading * 1.125)
   readonly property int passwordDotFontSize: Math.round(Style.font.heading * 1.33)
   readonly property int passwordDotLetterSpacing: Math.round(Style.font.heading * 0.19)
-  // Space to keep clear on each side of the field for the fingerprint icon
-  // (icon width plus a gap) so the centered dots never run under it.
-  readonly property real fingerprintReserve: fingerprintConfigured ? Math.round(fingerprintIcon.implicitWidth + 12) : 0
+  // The reader has its own plate under the field, so the password dots
+  // stay centered in the field.
+  readonly property real fingerprintReserve: 0
   // Shrink the dots to fit once the password outgrows the field, so every
   // keystroke stays visible — otherwise long passwords clip with no feedback.
   readonly property real passwordDotScale: dotMetrics.advanceWidth > 0
@@ -51,8 +51,8 @@ Item {
 
   Commons.Translations { id: strings; directory: Qt.resolvedUrl("i18n") }
 
-  // Same broken frame as the windows: 1px, a different cut on each corner,
-  // a gap in every run, and the two halves stepped so they do not meet.
+  // Lock plates stay a 1px broken stroke. No halo. Window glow lives on the
+  // frame layer and does not belong on the lock page or the password field.
   property int frameStep: 0
 
   Timer {
@@ -146,6 +146,7 @@ Item {
     var longest = 0
     for (var c = 1; c < 4; c++) if (cuts[c] > cuts[longest]) longest = c
     ctx.beginPath()
+    ctx.lineWidth = 1
     ctx.strokeStyle = tick
     if (longest === 0) ctx.moveTo(x + 4, y + cuts[0] + 3), ctx.lineTo(x + 4, y + cuts[0] + 14)
     else if (longest === 1) ctx.moveTo(x + w - 4, y + cuts[1] + 3), ctx.lineTo(x + w - 4, y + cuts[1] + 14)
@@ -153,6 +154,52 @@ Item {
     else ctx.moveTo(x + cuts[3] + 3, y + h - 4), ctx.lineTo(x + cuts[3] + 15, y + h - 4)
     ctx.stroke()
     return cuts
+  }
+
+  function paintPage(ctx, width, height) {
+    ctx.beginPath()
+    ctx.lineWidth = 1
+    ctx.strokeStyle = "#00F0FF"
+    var arm = 48
+    var cut = 12
+    var inset = 22
+    var i
+    for (i = 0; i < 4; i++) {
+      var cx = (i === 1 || i === 2) ? width - 1 - inset : inset
+      var cy = (i >= 2) ? height - 1 - inset : inset
+      var sx = (i === 1 || i === 2) ? -1 : 1
+      var sy = (i >= 2) ? -1 : 1
+      ctx.moveTo(cx + sx * cut, cy)
+      ctx.lineTo(cx + sx * arm, cy)
+      ctx.moveTo(cx + sx * cut, cy)
+      ctx.lineTo(cx, cy + sy * cut)
+      ctx.moveTo(cx, cy + sy * cut)
+      ctx.lineTo(cx, cy + sy * arm)
+      ctx.moveTo(cx + sx * (cut + 7), cy + sy * 6)
+      ctx.lineTo(cx + sx * (cut + 22), cy + sy * 6)
+      ctx.moveTo(cx + sx * 6, cy + sy * (cut + 7))
+      ctx.lineTo(cx + sx * 6, cy + sy * (cut + 20))
+    }
+    var hy = 40
+    ctx.moveTo(width * 0.16, hy)
+    ctx.lineTo(width * 0.34, hy)
+    ctx.moveTo(width * 0.66, hy)
+    ctx.lineTo(width * 0.84, hy)
+    var fy = height - 28
+    ctx.moveTo(width * 0.18, fy)
+    ctx.lineTo(width * 0.40, fy)
+    ctx.moveTo(width * 0.60, fy)
+    ctx.lineTo(width * 0.82, fy)
+    var d
+    for (d = 0; d < 2; d++) {
+      var dx = width * (d === 0 ? 0.45 : 0.55)
+      ctx.moveTo(dx, fy - 4)
+      ctx.lineTo(dx + 4, fy)
+      ctx.lineTo(dx, fy + 4)
+      ctx.lineTo(dx - 4, fy)
+      ctx.closePath()
+    }
+    ctx.stroke()
   }
 
   function forcePasswordFocus() {
@@ -254,6 +301,7 @@ Item {
         ctx.clearRect(0, 0, width, height)
         if (width < 40 || height < 40) return
         root.strokeFrame(ctx, 1, 1, width - 2, height - 2, 4, "#FCEE0A", "#00F0FF")
+        root.paintPage(ctx, width, height)
       }
       onWidthChanged: requestPaint()
       onHeightChanged: requestPaint()
@@ -266,7 +314,7 @@ Item {
     Row {
       id: cityMark
       anchors.top: parent.top
-      anchors.topMargin: 36
+      anchors.topMargin: 48
       anchors.horizontalCenter: parent.horizontalCenter
       spacing: 18
 
@@ -309,7 +357,7 @@ Item {
         id: plate
         anchors.fill: parent
         anchors.margins: -12
-        antialiasing: true
+        antialiasing: false
 
         function draw() {
           requestPaint()
@@ -433,23 +481,82 @@ Item {
         elide: Text.ElideRight
       }
 
-      // Fingerprint hint pinned inside the field's right edge when a sensor is
-      // enrolled, so the user knows they can touch to unlock instead of typing.
-      // Matches hyprlock, which draws its fingerprint icon in the same spot.
-      // A reader the shell cannot reach crosses out rather than disappears, so
-      // it stops inviting touches that can never unlock.
+    }
+
+    // The reader is its own plate: the same 1px broken stroke as the password
+    // field, yellow when the sensor can be touched, red when it cannot.
+    Item {
+      id: readerPlate
+      visible: root.fingerprintConfigured
+      width: 108
+      height: 108
+      anchors.top: inputField.bottom
+      anchors.topMargin: 36
+      anchors.horizontalCenter: parent.horizontalCenter
+      readonly property color ink: root.fingerprintUnavailable ? "#FE1038" : "#FCEE0A"
+      readonly property color ink2: root.fingerprintUnavailable ? "#FCEE0A" : "#00F0FF"
+      onInkChanged: readerCanvas.requestPaint()
+      onInk2Changed: readerCanvas.requestPaint()
+
+      Canvas {
+        id: readerCanvas
+        anchors.fill: parent
+        anchors.margins: -12
+        antialiasing: false
+        onPaint: {
+          var ctx = getContext("2d")
+          ctx.clearRect(0, 0, width, height)
+          var pad = 12
+          var x = pad
+          var y = pad
+          var w = width - pad * 2
+          var h = height - pad * 2
+          if (w < 20 || h < 20) return
+          var cuts = root.cutsFor(19, w, h)
+          ctx.beginPath()
+          ctx.moveTo(x + cuts[0], y)
+          ctx.lineTo(x + w - cuts[1], y)
+          ctx.lineTo(x + w, y + cuts[1])
+          ctx.lineTo(x + w, y + h - cuts[2])
+          ctx.lineTo(x + w - cuts[2], y + h)
+          ctx.lineTo(x + cuts[3], y + h)
+          ctx.lineTo(x, y + h - cuts[3])
+          ctx.lineTo(x, y + cuts[0])
+          ctx.closePath()
+          ctx.fillStyle = root.fingerprintUnavailable ? "rgba(40, 8, 14, 0.88)" : "rgba(8, 12, 18, 0.86)"
+          ctx.fill()
+          root.strokeFrame(ctx, x, y, w, h, 19, readerPlate.ink, readerPlate.ink2)
+        }
+        Connections {
+          target: root
+          function onFrameStepChanged() { readerCanvas.requestPaint() }
+        }
+        Component.onCompleted: requestPaint()
+        onWidthChanged: requestPaint()
+        onHeightChanged: requestPaint()
+      }
+
+      Text {
+        textFormat: Text.PlainText
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: -8
+        text: strings.t("lock.touch")
+        color: readerPlate.ink
+        font.family: Style.font.family
+        font.pixelSize: 12
+        font.letterSpacing: 3
+      }
+
       Text {
         id: fingerprintIcon
         objectName: "fingerprintIndicator"
         textFormat: Text.PlainText
-        anchors.right: parent.right
-        anchors.rightMargin: inputField.borderRight + 18
-        anchors.verticalCenter: parent.verticalCenter
-        visible: root.fingerprintConfigured
+        anchors.centerIn: parent
         text: root.fingerprintUnavailable ? "󰺱" : "󰈷"
-        color: root.fingerprintUnavailable ? Commons.Color.lock.textError : Commons.Color.lock.placeholder
+        color: readerPlate.ink
         font.family: Style.font.family
-        font.pixelSize: Math.round(root.fieldFontSize * 1.1)
+        font.pixelSize: 32
         horizontalAlignment: Text.AlignHCenter
         verticalAlignment: Text.AlignVCenter
       }
@@ -461,9 +568,9 @@ Item {
     Text {
       objectName: "fingerprintUnavailableNotice"
       textFormat: Text.PlainText
-      anchors.top: inputField.bottom
-      anchors.topMargin: 18
-      anchors.horizontalCenter: inputField.horizontalCenter
+      anchors.top: readerPlate.bottom
+      anchors.topMargin: 16
+      anchors.horizontalCenter: parent.horizontalCenter
       visible: root.fingerprintConfigured && root.fingerprintUnavailable
       text: Commons.I18n.t("lock.fingerprintUnavailable")
       color: Commons.Color.lock.textError

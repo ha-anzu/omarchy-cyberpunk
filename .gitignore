@@ -2,3 +2,4 @@ icon-theme.cache
 *.cache
 __pycache__/
 *.pyc
+bin/cp2077-sixel

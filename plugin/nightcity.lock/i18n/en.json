@@ -1,5 +1,6 @@
 {
   "lock.city": "NIGHT CITY",
   "lock.sealed": "SEALED",
-  "lock.access": "ACCESS"
+  "lock.access": "ACCESS",
+  "lock.touch": "TOUCH"
 }
